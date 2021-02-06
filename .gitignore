@@ -2,6 +2,6 @@
 .eggs/
 build/
 dist/
-skodaconnect.egg-info/
+seatconnect.egg-info/
 __pycache__/
-skoda.conf
+seat.conf

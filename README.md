@@ -1,15 +1,17 @@
-![Version](https://img.shields.io/github/v/release/lendy007/skodaconnect?include_prereleases)
-![PyPi](https://img.shields.io/pypi/v/skodaconnect?label=latest%20pypi)
-![Downloads PyPi](https://img.shields.io/pypi/dm/skodaconnect)
+![Version](https://img.shields.io/github/v/release/farfar/seatconnect?include_prereleases)
+![PyPi](https://img.shields.io/pypi/v/seatconnect?label=latest%20pypi)
+![Downloads PyPi](https://img.shields.io/pypi/dm/seatconnect)
 
-# Skoda Connect v1.0.30
+# Seat Connect v1.0.30
 
-Fork of https://github.com/robinostlund/volkswagencarnet where it was modified to support also Skoda Connect.
-Changes made to utilize the same API calls as the MySkoda mobile app.
+Fork of https://github.com/lendy007/skodaconnect which in turn is a fork of:
+https://github.com/robinostlund/volkswagencarnet
+Originally an integration for VW Carnet, adapted to communicate with Skoda Connect and then Seat Connect
+Changes made to utilize the same API calls as the Seat Connect mobile app.
 
 ## Information
 
-Retrieve statistics about your Skoda from the Skoda Connect online service
+Retrieve statistics about your Seat from the Seat Connect online service
 
 No licence, public domain, no guarantees, feel free to use for anything. Please contribute improvements/bugfixes etc.
 
@@ -33,20 +35,20 @@ Heating is what it sounds like and ventilation is used to ventilate/cool the car
 
 ## Other related repositories
 
-- [HomeAssistant Component](https://github.com/lendy007/homeassistant-skodaconnect) a custom component for Home Assistant
+- [HomeAssistant Component](https://github.com/farfar/homeassistant-seatconnect) a custom component for Home Assistant
 
 ## Installation
 
 ```sh
 [venv-python3] user@localhost:~
-$ pip install skodaconnect
+$ pip install seatconnect
 ```
 
 ### Example
 
 ```python
 #!/usr/bin/env python3
-import skodaconnect
+import seatconnect
 import pprint
 import asyncio
 import logging
@@ -135,7 +137,7 @@ def is_enabled(attr):
 async def main():
     """Main method."""
     async with ClientSession(headers={'Connection': 'keep-alive'}) as session:
-        connection = skodaconnect.Connection(session, USERNAME, PASSWORD)
+        connection = seatconnect.Connection(session, USERNAME, PASSWORD)
         if await connection._login():
             if await connection.update():
                 # Print overall state

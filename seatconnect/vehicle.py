@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Vehicle class for Skoda Connect."""
+"""Vehicle class for Seat Connect."""
 import re
 import time
 import logging
@@ -10,7 +10,7 @@ import hashlib
 from datetime import datetime, timedelta, timezone
 from json import dumps as to_json
 from collections import OrderedDict
-from skodaconnect.utilities import find_path, is_valid_path
+from seatconnect.utilities import find_path, is_valid_path
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -62,7 +62,7 @@ class Vehicle:
             self.get_realcardata(),
             return_exceptions=True
         )
-        _LOGGER.info(f'Vehicle {self.vin} added from Skoda Connect. Homeregion is "{self._homeregion}"')
+        _LOGGER.info(f'Vehicle {self.vin} added from Seat Connect. Homeregion is "{self._homeregion}"')
 
         _LOGGER.debug('Attempting discovery of supported API endpoints for vehicle.')
         operationList = await self._connection.getOperationList(self.vin)
@@ -115,7 +115,7 @@ class Vehicle:
                 return_exceptions=True
             )
         else:
-            _LOGGER.info(f'Vehicle with VIN {self.vin} is deactivated from Skoda Connect')
+            _LOGGER.info(f'Vehicle with VIN {self.vin} is deactivated from Seat Connect')
 
   # Data collection functions
     async def get_realcardata(self):
@@ -525,7 +525,7 @@ class Vehicle:
                 expiration = datetime.utcnow() + timedelta(days = 1)
             expiration = expiration.replace(tzinfo = None)
             if now >= expiration:
-                _LOGGER.warning(f'Skoda Connect access to {service} has expired!')
+                _LOGGER.warning(f'Seat Connect access to {service} has expired!')
                 self._discovered = False
                 return True
             else:
@@ -536,7 +536,7 @@ class Vehicle:
 
     def dashboard(self, **config):
         #Classic python notation
-        from skodaconnect.dashboard import Dashboard
+        from seatconnect.dashboard import Dashboard
         return Dashboard(self, **config)
 
     @property
@@ -592,13 +592,13 @@ class Vehicle:
 
     @property
     def model_image(self):
-        #Not implemented for SKODA
+        #Not implemented for SEAT
         """Return model image"""
         return self.attrs.get('imageUrl')
 
     @property
     def is_model_image_supported(self):
-        #Not implemented for SKODA
+        #Not implemented for SEAT
         if self.attrs.get('imageUrl', False):
             return True
 
@@ -624,14 +624,14 @@ class Vehicle:
   # Connection status
     @property
     def last_connected(self):
-        """Return when vehicle was last connected to skoda connect."""
+        """Return when vehicle was last connected to Seat Connect."""
         last_connected_utc = self.attrs.get('StoredVehicleDataResponse').get('vehicleData').get('data')[0].get('field')[0].get('tsCarSentUtc')
         last_connected = last_connected_utc.replace(tzinfo=timezone.utc).astimezone(tz=None)
         return last_connected.strftime('%Y-%m-%d %H:%M:%S')
 
     @property
     def is_last_connected_supported(self):
-        """Return when vehicle was last connected to skoda connect."""
+        """Return when vehicle was last connected to Seat Connect."""
         if next(iter(next(iter(self.attrs.get('StoredVehicleDataResponse', {}).get('vehicleData', {}).get('data', {})), None).get('field', {})), None).get('tsCarSentUtc', []):
             return True
 
@@ -1533,24 +1533,24 @@ class Vehicle:
 
     @property
     def trip_last_recuperation(self):
-        #Not implemented for SKODA
+        #Not implemented for SEAT
         return self.trip_last_entry.get('recuperation')
 
     @property
     def is_trip_last_recuperation_supported(self):
-        #Not implemented for SKODA
+        #Not implemented for SEAT
         response = self.trip_last_entry
         if response and type(response.get('recuperation', None)) in (float, int):
             return True
 
     @property
     def trip_last_total_electric_consumption(self):
-        #Not implemented for SKODA
+        #Not implemented for SEAT
         return self.trip_last_entry.get('totalElectricConsumption')
 
     @property
     def is_trip_last_total_electric_consumption_supported(self):
-        #Not implemented for SKODA
+        #Not implemented for SEAT
         response = self.trip_last_entry
         if response and type(response.get('totalElectricConsumption', None)) in (float, int):
             return True

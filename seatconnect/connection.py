@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Communicate with Skoda Connect."""
-"""Fork of https://github.com/robinostlund/volkswagencarnet where it was modified to support also Skoda Connect"""
-"""Modified to utilize Skoda App API instead of Web API"""
+"""Communicate with Seat Connect."""
+"""First fork from https://github.com/robinostlund/volkswagencarnet where it was modified to support also Skoda Connect"""
+"""Then forked from https://github.com/lendy007/skodaconnect for adaptation to Seat Connect"""
 import re
 import time
 import logging
@@ -17,8 +17,8 @@ from json import dumps as to_json
 import aiohttp
 from bs4 import BeautifulSoup
 from base64 import b64decode, b64encode
-from skodaconnect.utilities import read_config, json_loads
-from skodaconnect.vehicle import Vehicle
+from seatconnect.utilities import read_config, json_loads
+from seatconnect.vehicle import Vehicle
 
 from aiohttp import ClientSession, ClientTimeout
 from aiohttp.hdrs import METH_GET, METH_POST
@@ -43,7 +43,7 @@ _LOGGER = logging.getLogger(__name__)
 TIMEOUT = timedelta(seconds=30)
 
 class Connection:
-    """ Connection to Skoda connect """
+    """ Connection to Seat connect """
   # Init connection class
     def __init__(self, session, username, password, fulldebug=False, interval=timedelta(minutes=5)):
         """ Initialize """
@@ -107,15 +107,15 @@ class Connection:
             authissuer = response_data['issuer']
 
             # Get authorization
-            # https://identity.vwgroup.io/oidc/v1/authorize?nonce=yVOPHxDmksgkMo1HDUp6IIeGs9HvWSSWbkhPcxKTGNU&response_type=code id_token token&scope=openid mbb&ui_locales=de&redirect_uri=skodaconnect://oidc.login/&client_id=7f045eee-7003-4379-9968-9355ed2adb06%40apps_vw-dilab_com
+            # https://identity.vwgroup.io/oidc/v1/authorize?nonce=yVOPHxDmksgkMo1HDUp6IIeGs9HvWSSWbkhPcxKTGNU&response_type=code id_token token&scope=openid mbb&ui_locales=de&redirect_uri=seatconnect://identity-kit/login&client_id=xxxx
             req = await self._session.get(
                 url=authorizationEndpoint+\
                     '?redirect_uri='+APP_URI+\
                     '&nonce='+getNonce()+\
-                    '&response_type=code id_token'+\
-                    #'&response_type=code id_token token'+\
+                    '&state='+getNonce()+\
+                    '&response_type=code id_token token'+\
                     '&client_id='+CLIENT_ID+\
-                    '&scope=openid mbb profile address cars email birthdate badge phone driversLicense dealers',
+                    '&scope=openid mbb profile cars birthdate nickname address phone',
                 headers=self._session_auth_headers,
             )
             if req.status != 200:
@@ -177,7 +177,7 @@ class Connection:
                         _LOGGER.warning('Should have gotten a token by now.')
                         return False
             except:
-                # If we get excepted it should be because we can't redirect to the skodaconnect:// URL
+                # If we get excepted it should be because we can't redirect to the seatconnect:// URL
                 _LOGGER.debug('Got code: %s' % ref)
                 pass
 
@@ -188,11 +188,11 @@ class Connection:
             jwt_id_token = parse_qs(urlparse(ref).fragment).get('id_token')[0]
             _LOGGER.debug('Get tokens...')
 
-            # Exchange Auth code for Skoda tokens
+            # Exchange Auth code for Seat tokens
             tokenBody = {
                 'auth_code': jwt_auth_code,
                 'id_token':  jwt_id_token,
-                'brand': 'skoda'
+                'brand': 'seat'
             }
             tokenURL = 'https://tokenrefreshservice.apps.emea.vwapps.io/exchangeAuthCode'
             req = await self._session.post(
@@ -248,7 +248,7 @@ class Connection:
             await self.set_token('vwg')
             self._session_headers.pop('Content-Type', None)
             loaded_vehicles = await self.get(
-                url='https://msg.volkswagen.de/fs-car/usermanagement/users/v1/skoda/CZ/vehicles'
+                url='https://msg.volkswagen.de/fs-car/usermanagement/users/v1/seat/ES/vehicles'
             )
             # Add all VIN-numbers from account to list of vehicles
             if loaded_vehicles.get('userVehicles', {}).get('vehicle', []):
@@ -261,17 +261,17 @@ class Connection:
             return True
 
         except Exception as error:
-            _LOGGER.error('Failed to login to Skoda Connect, %s' % error)
+            _LOGGER.error('Failed to login to Seat Connect, %s' % error)
             self._session_logged_in = False
             return False
 
     async def terminate(self):
-        """Log out from Skoda Connect services"""
+        """Log out from Seat Connect services"""
         _LOGGER.info(f'Initiating logout')
         await self.logout()
 
     async def logout(self):
-        """Log out from Skoda Connect."""
+        """Log out from Seat Connect."""
         self._session_headers.pop('Authorization', None)
 
         if self._session_logged_in:
@@ -290,20 +290,20 @@ class Connection:
                 _LOGGER.info('Revoking Identity Access Token...')
                 #params = {
                 #    "token": self._session_tokens['identity']['access_token'],
-                #    "brand": "Skoda"
+                #    "brand": "Seat"
                 #}
                 #revoke_at = await self.post('https://tokenrefreshservice.apps.emea.vwapps.io/revokeToken', data = params)
             if self._session_headers.get('identity', {}).get('refresh_token'):
                 _LOGGER.info('Revoking Identity Refresh Token...')
                 params = {
                     "token": self._session_tokens['identity']['refresh_token'],
-                    "brand": "Skoda"
+                    "brand": "Seat"
                 }
                 revoke_rt = await self.post('https://tokenrefreshservice.apps.emea.vwapps.io/revokeToken', data = params)
 
   # HTTP methods to API
     async def _request(self, method, url, **kwargs):
-        """Perform a query to the Skoda Connect service"""
+        """Perform a query to the Seat Connect service"""
         _LOGGER.debug(f'HTTP {method} "{url}"')
         async with self._session.request(
             method,
@@ -386,13 +386,13 @@ class Connection:
         if self.logged_in == False:
             _LOGGER.debug
             if not await self._login():
-                _LOGGER.warning('Login to Skoda Connect failed!')
+                _LOGGER.warning('Login to Seat Connect failed!')
                 return False
         try:
             if not await self.validate_tokens:
-                _LOGGER.info('Session has expired. Initiating new login to Skoda Connect.')
+                _LOGGER.info('Session has expired. Initiating new login to Seat Connect.')
                 if not await self._login():
-                    _LOGGER.warning('Login to Skoda Connect failed!')
+                    _LOGGER.warning('Login to Seat Connect failed!')
                     raise Exception('Login failed')
 
             _LOGGER.debug('Going to call vehicle updates')
@@ -405,7 +405,7 @@ class Connection:
 
             return True
         except (IOError, OSError, LookupError, Exception) as error:
-            _LOGGER.warning(f'Could not update information from Skoda Connect: {error}')
+            _LOGGER.warning(f'Could not update information from Seat Connect: {error}')
         return False
 
  #### Data collect functions ####
@@ -475,7 +475,7 @@ class Connection:
         try:
             await self.set_token('vwg')
             response = await self.get(
-                'fs-car/promoter/portfolio/v1/skoda/CZ/vehicle/$vin/carportdata',
+                'fs-car/promoter/portfolio/v1/seat/ES/vehicle/$vin/carportdata',
                 vin = vin
             )
             if response.get('carportData', {}):
@@ -496,7 +496,7 @@ class Connection:
         try:
             await self.set_token('vwg')
             response = await self.get(
-                'fs-car/bs/vsr/v1/skoda/CZ/vehicles/$vin/status',
+                'fs-car/bs/vsr/v1/seat/ES/vehicles/$vin/status',
                 vin = vin
             )
             if response.get('StoredVehicleDataResponse', {}).get('vehicleData', {}).get('data', {})[0].get('field', {})[0] :
@@ -520,7 +520,7 @@ class Connection:
         try:
             await self.set_token('vwg')
             response = await self.get(
-                'fs-car/bs/tripstatistics/v1/skoda/CZ/vehicles/$vin/tripdata/shortTerm?newest',
+                'fs-car/bs/tripstatistics/v1/seat/ES/vehicles/$vin/tripdata/shortTerm?newest',
                 vin = vin
             )
             if response.get('tripData', {}):
@@ -541,7 +541,7 @@ class Connection:
         try:
             await self.set_token('vwg')
             response = await self.get(
-                'fs-car/bs/cf/v1/skoda/CZ/vehicles/$vin/position',
+                'fs-car/bs/cf/v1/seat/ES/vehicles/$vin/position',
                 vin = vin
             )
             if response.get('findCarResponse', {}):
@@ -573,7 +573,7 @@ class Connection:
         try:
             await self.set_token('vwg')
             response = await self.get(
-                'fs-car/bs/departuretimer/v1/skoda/CZ/vehicles/$vin/timer',
+                'fs-car/bs/departuretimer/v1/seat/ES/vehicles/$vin/timer',
                 vin = vin
             )
             if response.get('timer', {}):
@@ -594,7 +594,7 @@ class Connection:
         try:
             await self.set_token('vwg')
             response = await self.get(
-                'fs-car/bs/climatisation/v1/skoda/CZ/vehicles/$vin/climater',
+                'fs-car/bs/climatisation/v1/seat/ES/vehicles/$vin/climater',
                 vin = vin
             )
             if response.get('climater', {}):
@@ -615,7 +615,7 @@ class Connection:
         try:
             await self.set_token('vwg')
             response = await self.get(
-                'fs-car/bs/batterycharge/v1/skoda/CZ/vehicles/$vin/charger',
+                'fs-car/bs/batterycharge/v1/seat/ES/vehicles/$vin/charger',
                 vin = vin
             )
             if response.get('charger', {}):
@@ -636,7 +636,7 @@ class Connection:
         try:
             await self.set_token('vwg')
             response = await self.get(
-                'fs-car/bs/rs/v1/skoda/CZ/vehicles/$vin/status',
+                'fs-car/bs/rs/v1/seat/ES/vehicles/$vin/status',
                 vin = vin
             )
             if response.get('statusResponse', {}):
@@ -654,25 +654,25 @@ class Connection:
         """Return status of a request ID for a given section ID."""
         if self.logged_in == False:
             if not await self._login():
-                _LOGGER.warning('Login to Skoda Connect failed!')
+                _LOGGER.warning('Login to Seat Connect failed!')
                 raise Exception('Login failed')
         try:
             if not await self.validate_tokens:
-                _LOGGER.info('Session has expired. Initiating new login to Skoda Connect.')
+                _LOGGER.info('Session has expired. Initiating new login to Seat Connect.')
                 if not await self._login():
-                    _LOGGER.warning('Login to Skoda Connect failed!')
+                    _LOGGER.warning('Login to Seat Connect failed!')
                     raise Exception('Login failed')
             await self.set_token('vwg')
             if sectionId == 'climatisation':
-                url = 'fs-car/bs/$sectionId/v1/Skoda/CZ/vehicles/$vin/climater/actions/$requestId'
+                url = 'fs-car/bs/$sectionId/v1/Seat/ES/vehicles/$vin/climater/actions/$requestId'
             elif sectionId == 'batterycharge':
-                url = 'fs-car/bs/$sectionId/v1/Skoda/CZ/vehicles/$vin/charger/actions/$requestId'
+                url = 'fs-car/bs/$sectionId/v1/Seat/ES/vehicles/$vin/charger/actions/$requestId'
             elif sectionId == 'departuretimer':
-                url = 'fs-car/bs/$sectionId/v1/Skoda/CZ/vehicles/$vin/timer/actions/$requestId'
+                url = 'fs-car/bs/$sectionId/v1/Seat/ES/vehicles/$vin/timer/actions/$requestId'
             elif sectionId == 'vsr':
-                url = "fs-car/bs/$sectionId/v1/Skoda/CZ/vehicles/$vin/requests/$requestId/jobstatus"
+                url = "fs-car/bs/$sectionId/v1/Seat/ES/vehicles/$vin/requests/$requestId/jobstatus"
             else:
-                url = 'fs-car/bs/$sectionId/v1/Skoda/CZ/vehicles/$vin/requests/$requestId/status'
+                url = 'fs-car/bs/$sectionId/v1/Seat/ES/vehicles/$vin/requests/$requestId/status'
             url = re.sub('\$sectionId', sectionId, url)
             url = re.sub('\$requestId', requestId, url)
 
@@ -742,16 +742,16 @@ class Connection:
 
  #### Data set functions ####
     async def dataCall(self, query, vin='', **data):
-        """Function to execute actions through Skoda Connect servers."""
+        """Function to execute actions through Seat Connect servers."""
         if self.logged_in == False:
             if not await self._login():
-                _LOGGER.warning('Login to Skoda Connect failed!')
+                _LOGGER.warning('Login to Seat Connect failed!')
                 raise Exception('Login failed')
         try:
             if not await self.validate_tokens:
-                _LOGGER.info('Session has expired. Initiating new login to Skoda Connect.')
+                _LOGGER.info('Session has expired. Initiating new login to Seat Connect.')
                 if not await self._login():
-                    _LOGGER.warning('Login to Skoda Connect failed!')
+                    _LOGGER.warning('Login to Seat Connect failed!')
                     raise Exception('Login failed')
             response = await self.post(query, vin=vin, **data)
             _LOGGER.debug(f'Data call returned: {response}')
@@ -780,7 +780,7 @@ class Connection:
         """"Force vehicle data update."""
         try:
             await self.set_token('vwg')
-            response = await self.dataCall('fs-car/bs/vsr/v1/skoda/CZ/vehicles/$vin/requests', vin, data=None)
+            response = await self.dataCall('fs-car/bs/vsr/v1/seat/ES/vehicles/$vin/requests', vin, data=None)
             if not response:
                 raise Exception('Invalid or no response')
             elif response == 429:
@@ -799,7 +799,7 @@ class Connection:
         """Start/Stop charger."""
         try:
             await self.set_token('vwg')
-            response = await self.dataCall('fs-car/bs/batterycharge/v1/Skoda/CZ/vehicles/$vin/charger/actions', vin, json = data)
+            response = await self.dataCall('fs-car/bs/batterycharge/v1/Seat/ES/vehicles/$vin/charger/actions', vin, json = data)
             if not response:
                 raise Exception('Invalid or no response')
             elif response == 429:
@@ -821,7 +821,7 @@ class Connection:
             # Only get security token if auxiliary heater is to be started
             if data.get('action', {}).get('settings', {}).get('heaterSource', None) == 'auxiliary':
                 self._session_headers['X-securityToken'] = await self.get_sec_token(vin = vin, spin = spin, action = 'rclima')
-            response = await self.dataCall('fs-car/bs/climatisation/v1/Skoda/CZ/vehicles/$vin/climater/actions', vin, json = data)
+            response = await self.dataCall('fs-car/bs/climatisation/v1/Seat/ES/vehicles/$vin/climater/actions', vin, json = data)
             self._session_headers.pop('X-securityToken', None)
             if not response:
                 raise Exception('Invalid or no response')
@@ -849,7 +849,7 @@ class Connection:
             self._session_headers['Content-Type'] = 'application/vnd.vwg.mbb.RemoteStandheizung_v2_0_2+json'
             if not 'quickstop' in data:
                 self._session_headers['x-mbbSecToken'] = await self.get_sec_token(vin = vin, spin = spin, action = 'heating')
-            response = await self.dataCall('fs-car/bs/rs/v1/skoda/CZ/vehicles/$vin/action', vin = vin, json = data)
+            response = await self.dataCall('fs-car/bs/rs/v1/seat/ES/vehicles/$vin/action', vin = vin, json = data)
             # Clean up headers
             self._session_headers.pop('x-mbbSecToken', None)
             self._session_headers.pop('Content-Type', None)
@@ -885,7 +885,7 @@ class Connection:
             else:
                 self._session_headers['X-mbbSecToken'] = await self.get_sec_token(vin = vin, spin = spin, action = 'lock')
             self._session_headers['Content-Type'] = 'application/vnd.vwg.mbb.RemoteLockUnlock_v1_0_0+xml'
-            response = await self.dataCall('fs-car/bs/rlu/v1/skoda/CZ/vehicles/$vin/actions', vin, data = data)
+            response = await self.dataCall('fs-car/bs/rlu/v1/seat/ES/vehicles/$vin/actions', vin, data = data)
             # Clean up headers
             self._session_headers.pop('X-mbbSecToken', None)
             self._session_headers.pop('Content-Type', None)
@@ -987,7 +987,7 @@ class Connection:
 
             body = {
                 'grant_type': 'refresh_token',
-                'brand': 'Skoda',
+                'brand': 'Seat',
                 'refresh_token': self._session_tokens['identity']['refresh_token']
             }
             response = await self._session.post(
@@ -1003,7 +1003,7 @@ class Connection:
                 for token in tokens:
                     self._session_tokens['identity'][token] = tokens[token]
             else:
-                _LOGGER.warning('Something went wrong when refreshing Skoda tokens.')
+                _LOGGER.warning('Something went wrong when refreshing Seat tokens.')
                 return False
 
             body = {

@@ -20,7 +20,7 @@ def read_config():
             expanduser("~"),
             env.get("XDG_CONFIG_HOME", join(expanduser("~"), ".config")),
         ],
-        ["skoda.conf", ".skoda.conf"],
+        ["seat.conf", ".seat.conf"],
     ):
         try:
             config = join(directory, filename)

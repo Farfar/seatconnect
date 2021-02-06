@@ -1,13 +1,13 @@
-"""Constants for Skoda Connect library."""
+"""Constants for Seat Connect library."""
 
 BASE_SESSION = 'https://msg.volkswagen.de'
 BASE_AUTH = 'https://identity.vwgroup.io'
-CLIENT_ID = '7f045eee-7003-4379-9968-9355ed2adb06%40apps_vw-dilab_com'
-XCLIENT_ID = '28cd30c6-dee7-4529-a0e6-b1e07ff90b79'
-XAPPVERSION = '3.2.6'
-XAPPNAME = 'cz.skodaauto.connect'
-USER_AGENT = 'okhttp/3.14.7'
-APP_URI = 'skodaconnect://oidc.login/'
+CLIENT_ID = '50f215ac-4444-4230-9fb1-fe15cd1a9bcc@apps_vw-dilab_com'
+XCLIENT_ID = '3516bc10-fabd-4eb2-b41c-b38e21e9d8f6'
+XAPPVERSION = '1.2.0'
+XAPPNAME = 'SEATConnect'
+USER_AGENT = 'okhttp/3.10.0'
+APP_URI = 'seatconnect://identity-kit/login'
 
 HEADERS_SESSION = {
     'Connection': 'keep-alive',
@@ -27,6 +27,7 @@ HEADERS_AUTH = {
 #    'application/json,text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,\
 #        image/apng,*/*;q=0.8,application/signed-exchange;v=b3',
     'Content-Type': 'application/x-www-form-urlencoded',
+    'x-requested-with' = 'com.seat.connectedcar.mod2connectapp',
     'User-Agent': USER_AGENT,
     'X-App-Name': XAPPNAME
 }

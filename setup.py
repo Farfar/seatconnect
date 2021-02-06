@@ -13,7 +13,7 @@ setuptools.setup(
     name='seatconnect',
     version='1.0.30',
     description='Communicate with Seat Connect',
-    author='Farfar,
+    author='Farfar',
     author_email='faekie@hotmail.com',
     url='https://github.com/farfar/seatconnect',
     long_description=long_description,

@@ -668,7 +668,7 @@ class Vehicle:
     @property
     def service_inspection_distance(self):
         """Return time left for service inspection"""
-        return - int(self.attrs.get('StoredVehicleDataResponseParsed')['0x0203010003'].get('value'))
+        return - int(self.attrs.get('StoredVehicleDataResponseParsed')['0x0203010003'].get('value', 0))
 
     @property
     def is_service_inspection_distance_supported(self):
@@ -681,27 +681,28 @@ class Vehicle:
     @property
     def oil_inspection(self):
         """Return time left for service inspection"""
-        return - int(self.attrs.get('StoredVehicleDataResponseParsed')['0x0203010002'].get('value'))
+        return - int(self.attrs.get('StoredVehicleDataResponseParsed', {}).get('0x0203010002', {}).get('value', 0))
 
     @property
     def is_oil_inspection_supported(self):
         if self.attrs.get('StoredVehicleDataResponseParsed', False):
             if '0x0203010002' in self.attrs.get('StoredVehicleDataResponseParsed'):
-                return True
-            else:
-                return False
+                if self.attrs.get('StoredVehicleDataResponseParsed').get('0x0203010002').get('value', None) is not None:
+                    return True
+        return False
+
     @property
     def oil_inspection_distance(self):
         """Return time left for service inspection"""
-        return - int(self.attrs.get('StoredVehicleDataResponseParsed')['0x0203010001'].get('value'))
+        return - int(self.attrs.get('StoredVehicleDataResponseParsed')['0x0203010001'].get('value', 0))
 
     @property
     def is_oil_inspection_distance_supported(self):
         if self.attrs.get('StoredVehicleDataResponseParsed', False):
             if '0x0203010001' in self.attrs.get('StoredVehicleDataResponseParsed'):
-                return True
-            else:
-                return False
+                if self.attrs.get('StoredVehicleDataResponseParsed').get('0x0203010001').get('value', None) is not None:
+                    return True
+        return False
 
     @property
     def adblue_level(self):

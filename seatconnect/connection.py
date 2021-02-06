@@ -157,12 +157,10 @@ class Connection:
                 data = pwform,
                 allow_redirects=False
             )
-            _LOGGER.debug(f'Got: {req.text}')
             # Follow all redirects until we get redirected back to "our app"
             try:
                 maxDepth = 10
                 ref = req.headers['Location']
-                _LOGGER.debug(f'Redirected to: {ref}')
                 while not ref.startswith(APP_URI):
                     response = await self._session.get(
                         url=ref,
@@ -170,7 +168,6 @@ class Connection:
                         allow_redirects=False
                     )
                     ref = response.headers['Location']
-                    _LOGGER.debug(f'New location: {ref}')
                     # Set a max limit on requests to prevent forever loop
                     maxDepth -= 1
                     if maxDepth == 0:
@@ -449,6 +446,7 @@ class Connection:
         if not await self.validate_tokens:
             return False
         try:
+            _LOGGER.debug("Attempting extraction of subject from identity token.")
             atoken = self._session_tokens['identity']['access_token']
             sub = jwt.decode(atoken, verify=False).get('sub', None)
             await self.set_token('identity')
@@ -462,6 +460,8 @@ class Connection:
                 return data
             elif response.get('status_code', {}):
                 _LOGGER.warning(f'Could not fetch realCarData, HTTP status code: {response.get("status_code")}')
+            elif not bool(response):
+                _LOGGER.debug('Realcardata returned empty response')
             else:
                 _LOGGER.info('Unhandled error while trying to fetch realcar data')
         except Exception as error:

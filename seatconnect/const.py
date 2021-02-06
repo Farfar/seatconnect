@@ -27,7 +27,7 @@ HEADERS_AUTH = {
 #    'application/json,text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,\
 #        image/apng,*/*;q=0.8,application/signed-exchange;v=b3',
     'Content-Type': 'application/x-www-form-urlencoded',
-    'x-requested-with' = 'com.seat.connectedcar.mod2connectapp',
+    'x-requested-with': 'com.seat.connectedcar.mod2connectapp',
     'User-Agent': USER_AGENT,
     'X-App-Name': XAPPNAME
 }

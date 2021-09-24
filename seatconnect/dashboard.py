@@ -2,6 +2,7 @@
 # Thanks to molobrakos
 
 import logging
+from datetime import datetime
 from seatconnect.utilities import camel2slug
 
 _LOGGER = logging.getLogger(__name__)
@@ -13,6 +14,7 @@ class Instrument:
         self.name = name
         self.vehicle = None
         self.icon = icon
+        self.callback = None
 
     def __repr__(self):
         return self.full_name
@@ -27,10 +29,8 @@ class Instrument:
     def setup(self, vehicle, **config):
         self.vehicle = vehicle
         if not self.is_supported:
-            _LOGGER.debug("%s (%s:%s) is not supported", self, type(self).__name__, self.attr)
             return False
 
-        _LOGGER.debug("%s is supported", self)
         self.configurate(**config)
         return True
 
@@ -40,7 +40,7 @@ class Instrument:
 
     @property
     def full_name(self):
-        return "%s %s" % (self.vehicle_name, self.name)
+        return f"{self.vehicle_name} {self.name}"
 
     @property
     def is_mutable(self):
@@ -77,8 +77,8 @@ class Sensor(Instrument):
         self.unit = unit
         self.convert = False
 
-    def configurate(self, miles=False, **config):
-        if self.unit and miles:
+    def configurate(self, **config):
+        if self.unit and config.get('miles', False) is True:
             if "km" == self.unit:
                 self.unit = "mi"
                 self.convert = True
@@ -91,6 +91,15 @@ class Sensor(Instrument):
             elif "kWh/100 km" == self.unit:
                 self.unit = "kWh/100 mi"
                 self.convert = True
+        elif self.unit and config.get('scandinavian_miles', False) is True:
+            if "km" == self.unit:
+                self.unit = "mil"
+            elif "km/h" == self.unit:
+                self.unit = "mil/h"
+            elif "l/100 km" == self.unit:
+                self.unit = "l/100 mil"
+            elif "kWh/100 km" == self.unit:
+                self.unit = "kWh/100 mil"
 
         # Init placeholder for parking heater duration
         config.get('parkingheater', 30)
@@ -112,23 +121,25 @@ class Sensor(Instrument):
     @property
     def state(self):
         val = super().state
-        if val and self.unit and "mi" in self.unit and self.convert == True:
+        if val and self.unit and "mi" in self.unit and self.convert is True:
             return int(round(val / 1.609344))
-        elif val and self.unit and "mi/h" in self.unit and self.convert == True:
+        elif val and self.unit and "mi/h" in self.unit and self.convert is True:
             return int(round(val / 1.609344))
-        elif val and self.unit and "gal/100 mi" in self.unit and self.convert == True:
+        elif val and self.unit and "gal/100 mi" in self.unit and self.convert is True:
             return round(val * 0.4251438, 1)
-        elif val and self.unit and "kWh/100 mi" in self.unit and self.convert == True:
+        elif val and self.unit and "kWh/100 mi" in self.unit and self.convert is True:
             return round(val * 0.4251438, 1)
-        elif val and self.unit and "°F" in self.unit and self.convert == True:
+        elif val and self.unit and "°F" in self.unit and self.convert is True:
             temp = round((val * 9/5) + 32, 1)
             return temp
+        elif val and self.unit in ['mil', 'mil/h']:
+            return val / 10
         else:
             return val
 
 
 class BinarySensor(Instrument):
-    def __init__(self, attr, name, device_class, icon='',reverse_state=False):
+    def __init__(self, attr, name, device_class, icon='', reverse_state=False):
         super().__init__(component="binary_sensor", attr=attr, name=name, icon=icon)
         self.device_class = device_class
         self.reverse_state = reverse_state
@@ -140,15 +151,15 @@ class BinarySensor(Instrument):
     @property
     def str_state(self):
         if self.device_class in ["door", "window"]:
-            return "Open" if self.state else "Closed"
+            return "Closed" if self.state else "Open"
         if self.device_class == "lock":
-            return "Unlocked" if self.state else "Locked"
+            return "Locked" if self.state else "Unlocked"
         if self.device_class == "safety":
             return "Warning!" if self.state else "OK"
         if self.device_class == "plug":
-            return "Charging" if self.state else "Plug removed"
+            return "Connected" if self.state else "Disconnected"
         if self.state is None:
-            _LOGGER.error("Can not encode state %s:%s", self.attr, self.state)
+            _LOGGER.error(f"Can not encode state {self.attr} {self.state}")
             return "?"
         return "On" if self.state else "Off"
 
@@ -287,10 +298,16 @@ class Position(Instrument):
     def str_state(self):
         state = super().state #or {}
         ts = state.get("timestamp", None)
+        if isinstance(ts, str):
+            time = str(datetime.strptime(ts,'%Y-%m-%dT%H:%M:%SZ').astimezone(tz=None))
+        elif isinstance(ts, datetime):
+            time = str(ts.astimezone(tz=None))
+        else:
+            time = None
         return (
             state.get("lat", "?"),
             state.get("lng", "?"),
-            str(ts.astimezone(tz=None)) if ts else None,
+            time,
         )
 
 
@@ -318,12 +335,26 @@ class DoorLock(Instrument):
         return self.state
 
     async def lock(self):
-        return await self.vehicle.set_lock('lock', self.spin)
-        await self.vehicle.update()
+        try:
+            response = await self.vehicle.set_lock('lock', self.spin)
+            await self.vehicle.update()
+            if self.callback is not None:
+                self.callback()
+            return response
+        except Exception as e:
+            _LOGGER.error(f"Lock failed: {e}")
+            return False
 
     async def unlock(self):
-        return await self.vehicle.set_lock('unlock', self.spin)
-        await self.vehicle.update()
+        try:
+            response = await self.vehicle.set_lock('unlock', self.spin)
+            await self.vehicle.update()
+            if self.callback is not None:
+                self.callback()
+            return response
+        except Exception as e:
+            _LOGGER.error(f"Unlock failed: {e}")
+            return False
 
     @property
     def attributes(self):
@@ -357,6 +388,57 @@ class TrunkLock(Instrument):
         return None
 
 # Switches
+class RequestHonkAndFlash(Switch):
+    def __init__(self):
+        super().__init__(attr="request_honkandflash", name="Start honking and flashing", icon="mdi:car-emergency")
+
+    @property
+    def state(self):
+        return self.vehicle.request_honkandflash
+
+    async def turn_on(self):
+        await self.vehicle.set_honkandflash('honkandflash')
+        await self.vehicle.update()
+        if self.callback is not None:
+            self.callback()
+
+    async def turn_off(self):
+        pass
+
+    @property
+    def assumed_state(self):
+        return False
+
+    @property
+    def attributes(self):
+        return dict(last_result = self.vehicle.honkandflash_action_status)
+
+
+class RequestFlash(Switch):
+    def __init__(self):
+        super().__init__(attr="request_flash", name="Start flashing", icon="mdi:car-parking-lights")
+
+    @property
+    def state(self):
+        return self.vehicle.request_flash
+
+    async def turn_on(self):
+        await self.vehicle.set_honkandflash('flash')
+        await self.vehicle.update()
+        if self.callback is not None:
+            self.callback()
+
+    async def turn_off(self):
+        pass
+
+    @property
+    def assumed_state(self):
+        return False
+
+    @property
+    def attributes(self):
+        return dict(last_result = self.vehicle.honkandflash_action_status)
+
 
 class RequestUpdate(Switch):
     def __init__(self):
@@ -369,6 +451,8 @@ class RequestUpdate(Switch):
     async def turn_on(self):
         await self.vehicle.set_refresh()
         await self.vehicle.update()
+        if self.callback is not None:
+            self.callback()
 
     async def turn_off(self):
         pass
@@ -391,11 +475,11 @@ class ElectricClimatisation(Switch):
         return self.vehicle.electric_climatisation
 
     async def turn_on(self):
-        await self.vehicle.set_climatisation('electric')
+        await self.vehicle.set_climatisation(mode = 'electric')
         await self.vehicle.update()
 
     async def turn_off(self):
-        await self.vehicle.set_climatisation('off')
+        await self.vehicle.set_climatisation(mode = 'off')
         await self.vehicle.update()
 
     @property
@@ -419,11 +503,11 @@ class AuxiliaryClimatisation(Switch):
         return self.vehicle.auxiliary_climatisation
 
     async def turn_on(self):
-        await self.vehicle.set_climatisation('auxiliary', self.spin)
+        await self.vehicle.set_climatisation(mode = 'auxiliary', spin = self.spin)
         await self.vehicle.update()
 
     async def turn_off(self):
-        await self.vehicle.set_climatisation('off')
+        await self.vehicle.set_climatisation(mode = 'off')
         await self.vehicle.update()
 
     @property
@@ -475,6 +559,33 @@ class WindowHeater(Switch):
     async def turn_off(self):
         await self.vehicle.set_window_heating('stop')
         await self.vehicle.update()
+
+    @property
+    def assumed_state(self):
+        return False
+
+    @property
+    def attributes(self):
+        return dict(last_result = self.vehicle.climater_action_status)
+
+
+class SeatHeating(Switch):
+    def __init__(self):
+        super().__init__(attr="seat_heating", name="Seat Heating", icon="mdi:seat-recline-normal")
+
+    @property
+    def state(self):
+        return self.vehicle.seat_heating
+
+    async def turn_on(self):
+        #await self.vehicle.set_seat_heating('start')
+        #await self.vehicle.update()
+        pass
+
+    async def turn_off(self):
+        #await self.vehicle.set_seat_heating('stop')
+        #await self.vehicle.update()
+        pass
 
     @property
     def assumed_state(self):
@@ -568,6 +679,101 @@ class PHeaterVentilation(Switch):
         return dict(last_result = self.vehicle.pheater_action_status)
 
 
+class DepartureTimer1(Switch):
+    def __init__(self):
+        super().__init__(attr="departure1", name="Departure timer 1", icon="mdi:radiator")
+
+    def configurate(self, **config):
+        self.spin = config.get('spin', '')
+
+    @property
+    def state(self):
+        status = self.vehicle.departure1.get("timerProgrammedStatus", "")
+        if status == "programmed":
+            return True
+        else:
+            return False
+
+    async def turn_on(self):
+        await self.vehicle.set_timer_active(id=1, action="on")
+        await self.vehicle.update()
+
+    async def turn_off(self):
+        await self.vehicle.set_timer_active(id=1, action="off")
+        await self.vehicle.update()
+
+    @property
+    def assumed_state(self):
+        return False
+
+    @property
+    def attributes(self):
+        return dict(self.vehicle.departure1)
+
+
+class DepartureTimer2(Switch):
+    def __init__(self):
+        super().__init__(attr="departure2", name="Departure timer 2", icon="mdi:radiator")
+
+    def configurate(self, **config):
+        self.spin = config.get('spin', '')
+
+    @property
+    def state(self):
+        status = self.vehicle.departure2.get("timerProgrammedStatus", "")
+        if status == "programmed":
+            return True
+        else:
+            return False
+
+    async def turn_on(self):
+        await self.vehicle.set_timer_active(id=2, action="on")
+        await self.vehicle.update()
+
+    async def turn_off(self):
+        await self.vehicle.set_timer_active(id=2, action="off")
+        await self.vehicle.update()
+
+    @property
+    def assumed_state(self):
+        return False
+
+    @property
+    def attributes(self):
+        return dict(self.vehicle.departure2)
+
+class DepartureTimer3(Switch):
+    def __init__(self):
+        super().__init__(attr="departure3", name="Departure timer 3", icon="mdi:radiator")
+
+    def configurate(self, **config):
+        self.spin = config.get('spin', '')
+
+    @property
+    def state(self):
+        status = self.vehicle.departure3.get("timerProgrammedStatus", "")
+        if status == "programmed":
+            return True
+        else:
+            return False
+
+    async def turn_on(self):
+        await self.vehicle.set_timer_active(id=3, action="on")
+        await self.vehicle.update()
+
+    async def turn_off(self):
+        await self.vehicle.set_timer_active(id=3, action="off")
+        await self.vehicle.update()
+
+    @property
+    def assumed_state(self):
+        return False
+
+    @property
+    def attributes(self):
+        return dict(self.vehicle.departure3)
+
+
 class RequestResults(Sensor):
     def __init__(self):
         super().__init__(attr="request_results", name="Request results", icon="mdi:chat-alert", unit="")
@@ -603,6 +809,9 @@ def create_instruments():
         #CombustionClimatisationClimate(),
         Charging(),
         RequestResults(),
+        DepartureTimer1(),
+        DepartureTimer2(),
+        DepartureTimer3(),
         Sensor(
             attr="distance",
             name="Odometer",
@@ -613,6 +822,12 @@ def create_instruments():
             attr="battery_level",
             name="Battery level",
             icon="mdi:battery",
+            unit="%",
+        ),
+        Sensor(
+            attr="min_charge_level",
+            name="Minimum charge level",
+            icon="mdi:battery-positive",
             unit="%",
         ),
         Sensor(
@@ -670,6 +885,18 @@ def create_instruments():
             unit="h",
         ),
         Sensor(
+            attr="charging_power",
+            name="Charging power",
+            icon="mdi:flash",
+            unit="W"
+        ),
+        Sensor(
+            attr="charge_rate",
+            name="Charging rate",
+            icon="mdi:battery-heart",
+            unit="km/h"
+        ),
+        Sensor(
             attr="electric_range",
             name="Electric range",
             icon="mdi:car-electric",
@@ -698,6 +925,12 @@ def create_instruments():
             name="Climatisation target temperature",
             icon="mdi:thermometer",
             unit="°C",
+        ),
+        Sensor(
+            attr="climatisation_time_left",
+            name="Climatisation time left",
+            icon="mdi:clock",
+            unit="h",
         ),
         Sensor(
             attr="trip_last_average_speed",
@@ -736,8 +969,20 @@ def create_instruments():
             unit="kWh/100 km",
         ),
         Sensor(
+            attr="trip_last_average_recuperation",
+            name="Last trip average recuperation",
+            icon="mdi:battery-plus",
+            unit="kWh/100 km",
+        ),
+        Sensor(
             attr="trip_last_average_auxillary_consumption",
             name="Last trip average auxillary consumption",
+            icon="mdi:flash",
+            unit="kWh/100 km",
+        ),
+        Sensor(
+            attr="trip_last_average_aux_consumer_consumption",
+            name="Last trip average auxillary consumer consumption",
             icon="mdi:flash",
             unit="kWh/100 km",
         ),
@@ -791,101 +1036,101 @@ def create_instruments():
             attr="door_locked",
             name="Doors locked",
             device_class="lock",
-            reverse_state=True
+            reverse_state=False
         ),
         BinarySensor(
             attr="door_closed_left_front",
             name="Door closed left front",
             device_class="door",
-            reverse_state=True,
+            reverse_state=False,
             icon="mdi:car-door"
         ),
         BinarySensor(
             attr="door_closed_right_front",
             name="Door closed right front",
             device_class="door",
-            reverse_state=True,
+            reverse_state=False,
             icon="mdi:car-door"
         ),
         BinarySensor(
             attr="door_closed_left_back",
             name="Door closed left back",
             device_class="door",
-            reverse_state=True,
+            reverse_state=False,
             icon="mdi:car-door"
         ),
         BinarySensor(
             attr="door_closed_right_back",
             name="Door closed right back",
             device_class="door",
-            reverse_state=True,
+            reverse_state=False,
             icon="mdi:car-door"
         ),
         BinarySensor(
             attr="trunk_locked",
             name="Trunk locked",
             device_class="lock",
-            reverse_state=True
+            reverse_state=False
         ),
         BinarySensor(
             attr="trunk_closed",
             name="Trunk closed",
             device_class="door",
-            reverse_state=True
+            reverse_state=False
         ),
         BinarySensor(
             attr="hood_closed",
             name="Hood closed",
             device_class="door",
-            reverse_state=True
+            reverse_state=False
         ),
         BinarySensor(
             attr="charging_cable_connected",
             name="Charging cable connected",
             device_class="plug",
-            reverse_state=True
+            reverse_state=False
         ),
         BinarySensor(
             attr="charging_cable_locked",
             name="Charging cable locked",
             device_class="lock",
-            reverse_state=True
+            reverse_state=False
         ),
         BinarySensor(
             attr="sunroof_closed",
             name="Sunroof closed",
             device_class="window",
-            reverse_state=True
+            reverse_state=False
         ),
         BinarySensor(
             attr="windows_closed",
             name="Windows closed",
             device_class="window",
-            reverse_state=True
+            reverse_state=False
         ),
         BinarySensor(
             attr="window_closed_left_front",
             name="Window closed left front",
             device_class="window",
-            reverse_state=True
+            reverse_state=False
         ),
         BinarySensor(
             attr="window_closed_left_back",
             name="Window closed left back",
             device_class="window",
-            reverse_state=True
+            reverse_state=False
         ),
         BinarySensor(
             attr="window_closed_right_front",
             name="Window closed right front",
             device_class="window",
-            reverse_state=True
+            reverse_state=False
         ),
         BinarySensor(
             attr="window_closed_right_back",
             name="Window closed right back",
             device_class="window",
-            reverse_state=True
+            reverse_state=False
         ),
         BinarySensor(
             attr="vehicle_moving",
@@ -902,9 +1147,10 @@ def create_instruments():
 
 class Dashboard:
     def __init__(self, vehicle, **config):
-        _LOGGER.debug("Setting up dashboard with config :%s", config)
         self.instruments = [
             instrument
             for instrument in create_instruments()
             if instrument.setup(vehicle, **config)
         ]
+        _LOGGER.debug("Supported instruments: " + ", ".join(str(inst.attr) for inst in self.instruments))
+

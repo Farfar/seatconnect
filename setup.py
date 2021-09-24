@@ -2,6 +2,7 @@ import setuptools
 
 # read the contents of your README file
 from os import path
+from seatconnect.__version__ import __version__ as lib_version
 this_directory = path.abspath(path.dirname(__file__))
 with open(path.join(this_directory, 'README.md'), encoding='utf-8') as f:
     long_description = f.read()
@@ -11,7 +12,7 @@ def local_scheme(version):
 
 setuptools.setup(
     name='seatconnect',
-    version='1.0.30',
+    version=lib_version,
     description='Communicate with Seat Connect',
     author='Farfar',
     author_email='faekie@hotmail.com',

@@ -2,7 +2,7 @@
 ![PyPi](https://img.shields.io/pypi/v/seatconnect?label=latest%20pypi)
 ![Downloads PyPi](https://img.shields.io/pypi/dm/seatconnect)
 
-# Seat Connect v1.0.30
+# Seat Connect v1.1.0
 
 Fork of https://github.com/lendy007/skodaconnect which in turn is a fork of:
 https://github.com/robinostlund/volkswagencarnet
@@ -19,6 +19,8 @@ No licence, public domain, no guarantees, feel free to use for anything. Please 
 
 Major code changes have been made to consolidate functions and also enable auxiliary climatisation for PHEV vehicles.
 Names have been changed to avoid confusion when working with the code.
+
+- **From version 1.1.0** and onwards there has been changes to token handling, login procedure and overall mode streamlined code. Logins should now be significantly faster and reliable. Codebase is directly derived and modified from Skoda Connect library with minor modifications to suit Seat API handling.
 
 - **From version 1.0.30** and onwards there might be breaking changes for the combustion heating/climatisation.
 
@@ -46,131 +48,47 @@ $ pip install seatconnect
 
 ### Example
 
-```python
-#!/usr/bin/env python3
-import seatconnect
-import pprint
-import asyncio
-import logging
+For an extensive example, please use the code found in example/example.py.
+When logged in the library will automatically create a vehicle object for every car registered to the account. Initially no data is fetched at all. Use the doLogin method and it will signin with the credentials used for the class constructor.
+Method get_vehicles will fetch vehicle basic information and create Vehicle class objects for all associated vehicles in account.
+To update all available data use the update_all method of the Connect class. This will call the update function for all registered vehicles, which in turn will fetch data from all available API endpoints.
 
-from aiohttp import ClientSession
+#### Attributes
+The Vehicle class contains all of the attributes with values fetched from the API.
+To access a single attribute, please see and use the example/example.py.
+This will print all available methods, variables and properties as well as a list of supported attributes for discovered car.
 
-logging.basicConfig(level=logging.DEBUG)
+#### Methods
+Vehicle, in the following example the car object is an object of Vehicle class:
+```
+car.set_charger(action = "start")                          # action = "start" or "stop"
+car.set_charger_current(value=<int/str>                    # value = integer 1-255 or Maximum/Reduced (For PHEV: 252=Reduced and 254=Maximum)
+car.set_charge_limit(value=<int>)                          # value = integer 0-100 in 10 increments. Valid values is PHEV: 0-50, EV: 50-100.
+car.set_battery_climatisation(mode = False)                # mode = False or True
+car.set_climatisation(mode = "auxilliary", spin="1234")    # mode = "auxilliary", "electric" or "off". spin is S-PIN and only needed for aux heating
+car.set_climatisation_temp(temperature = 22)               # temperature = integer from 16 to 30
+car.set_window_heating(action = "start")                   # action = "start" or "stop"
+car.set_lock(action = "unlock", spin = "1234")             # action = "unlock" or "lock". spin = SPIN, needed for both
+car.set_pheater(mode = "heating", spin = "1234")           # action = "heating", "ventilation" or "off". spin = SPIN, not needed for off
+car.set_charge_limit(limit = 30)                           # limit = 0,10,20,30,40,50
+car.set_timer_active(id = 1, action = "on"}                # id = 1, 2, 3, action = "on" or "off".
+car.set_timer_schedule(id = 1,  schedule = dict)           # id = 1, 2, 3, see example for full information about schedule variable
+car.set_refresh()                                          # Takes no arguments, will trigger force update
+```
 
-USERNAME='test@example.com'
-PASSWORD='mysecretpassword'
+Connection:
+```
+session = aiohttp.ClientSession(headers={'Connection': 'keep-alive'})   # Create a aiohttp session object
+conn = Connection(session, username, password, fulldebug)               #
+conn.doLogin()                                                         # Attempt a login, returns true/false, variable conn.
+conn.get_vehicles()                                                     # Attempts to fetch all vehicles associated to account.
+conn.update_all()                                                       # Calls update for all vehicle objects.
+conn.logout()                                                           # Logout from API, call for revoke of tokens.
+conn.terminate()                                                        # Terminate session, calls logout().
+conn.get<method>                                                        # The get methods calls on API endpoints and returns data. See example.
+conn.set<method>                                                        # The set methods calls on API endpoints to set config for vehicle.
+```
+Refrain from using methods starting with _, they are intended for internal use only.
 
-
-COMPONENTS = {
-    'sensor': 'sensor',
-    'binary_sensor': 'binary_sensor',
-    'lock': 'lock',
-    'device_tracker': 'device_tracker',
-    'switch': 'switch',
-}
-
-RESOURCES = [
-        - charging_cable_connected
-        - charging_cable_locked
-        - door_closed_left_front
-        - door_closed_left_back
-        - door_closed_right_front
-        - door_closed_right_back
-        - doors_locked
-        - energy_flow
-        - external_power
-        - hood_closed
-        - parking_light
-        - request_in_progress
-        - sunroof_closed
-        - trunk_closed
-        - trunk_locked
-        - vehicle_moving
-        - window_closed_left_front
-        - window_closed_left_back
-        - window_closed_right_front
-        - window_closed_right_back
-        - windows_closed
-        - position
-        - door_locked
-        - trunk_locked
-        - adblue_level
-        - battery_level
-        - charger_max_ampere
-        - charging_time_left
-        - climatisation_target_temperature
-        - combined_range
-        - combustion_range
-        - electric_range
-        - fuel_level
-        - last_connected
-        - last_trip_average_electric_consumption
-        - last_trip_average_fuel_consumption
-        - last_trip_average_speed
-        - last_trip_duration
-        - last_trip_length
-        - odometer
-        - oil_inspection_days
-        - oil_inspection_distance
-        - outside_temperature
-        - parking_time
-        - pheater_status
-        - pheater_duration
-        - request_results
-        - requests_remaining
-        - service_inspection_days
-        - service_inspection_distance
-        - auxiliary_climatisation
-        - charging
-        - climatisation_from_battery
-        - electric_climatisation
-        - force_data_refresh
-        - parking_heater_heating
-        - parking_heater_ventilation
-        - window_heater
-]
-
-def is_enabled(attr):
-    """Return true if the user has enabled the resource."""
-    return attr in RESOURCES
-
-async def main():
-    """Main method."""
-    async with ClientSession(headers={'Connection': 'keep-alive'}) as session:
-        connection = seatconnect.Connection(session, USERNAME, PASSWORD)
-        if await connection._login():
-            if await connection.update():
-                # Print overall state
-                pprint.pprint(connection._state)
-
-                # Print vehicles
-                for vehicle in connection.vehicles:
-                    pprint.pprint(vehicle)
-
-                # get all instruments
-                instruments = set()
-                for vehicle in connection.vehicles:
-                    dashboard = vehicle.dashboard(mutable=True)
-
-                    for instrument in (
-                            instrument
-                            for instrument in dashboard.instruments
-                            if instrument.component in COMPONENTS
-                            and is_enabled(instrument.slug_attr)):
-
-                        instruments.add(instrument)
-
-                # Output all supported instruments
-                for instrument in instruments:
-                    print(f'name: {instrument.full_name}')
-                    print(f'str_state: {instrument.str_state}')
-                    print(f'state: {instrument.state}')
-                    print(f'supported: {instrument.is_supported}')
-                    print(f'attr: {instrument.attr}')
-                    print(f'attributes: {instrument.attributes}')
-
-if __name__ == "__main__":
-    loop = asyncio.get_event_loop()
-    # loop.run(main())
-    loop.run_until_complete(main())
-``` 
+## Further help or contributions
+For questions, further help or contributions you can join the (Skoda Connect) Discord server at https://discord.gg/826X9jEtCh

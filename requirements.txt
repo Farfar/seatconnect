@@ -1,5 +1,7 @@
-lxml
-beautifulsoup4
 aiohttp
+beautifulsoup4
+cryptography
+lxml
 pytest-asyncio
 pyjwt
+xmltodict

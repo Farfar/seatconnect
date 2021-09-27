@@ -1092,7 +1092,7 @@ class Connection:
                 }
             }
             self._session_headers['Content-Type'] = 'application/json'
-            response = await self.post(urljoin(self._session_spin_ref_url, '/api/rolesrights/authorization/v2/security-pin-auth-completed'), json = body)
+            response = await self.post(f '{secbase}/api/rolesrights/authorization/v2/security-pin-auth-completed', json = body)
             self._session_headers.pop('Content-Type', None)
             if response.get('securityToken', False):
                 return response['securityToken']

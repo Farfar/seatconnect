@@ -2,7 +2,7 @@
 ![PyPi](https://img.shields.io/pypi/v/seatconnect?label=latest%20pypi)
 ![Downloads PyPi](https://img.shields.io/pypi/dm/seatconnect)
 
-# Seat Connect v1.1.1
+# Seat Connect v1.1.2
 
 Fork of https://github.com/lendy007/skodaconnect which in turn is a fork of:
 https://github.com/robinostlund/volkswagencarnet

@@ -1158,7 +1158,7 @@ class Connection:
         """Set departure timers."""
         try:
             # First get most recent departuretimer settings from server
-            departuretimers = await self.getDeparturetimer(vin)
+            departuretimers = await self.getDeparturetimer(vin, baseurl)
             timer = departuretimers.get('departuretimer', {}).get('timersAndProfiles', {}).get('timerList', {}).get('timer', [])
             profile = departuretimers.get('departuretimer', {}).get('timersAndProfiles', {}).get('timerProfileList', {}).get('timerProfile', [])
             setting = departuretimers.get('departuretimer', {}).get('timersAndProfiles', {}).get('timerBasicSetting', [])

@@ -397,7 +397,7 @@ class Connection:
             # If connect token is not valid, try to refresh it
             if not await self.validate_token(token):
                 # Try to refresh "Connect" token
-                if not await refresh_token(BRAND):
+                if not await self.refresh_token(BRAND):
                     raise SeatTokenExpiredException('Token is invalid for client')
 
             # https://mbboauth-1d.prd.ece.vwg-connect.com/mbbcoauth/mobile/oauth2/v1/token

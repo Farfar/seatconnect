@@ -10,6 +10,8 @@ import asyncio
 import hashlib
 import jwt
 import hmac
+import string
+import secrets
 import xmltodict
 
 from sys import version_info, argv
@@ -54,7 +56,8 @@ from .const import (
     XAPPNAME,
     USER_AGENT,
     APP_URI,
-    MODELVIEW,
+    MODELVIEWL,
+    MODELVIEWS,
     MODELAPPID,
     MODELAPIKEY,
     MODELHOST,
@@ -68,9 +71,9 @@ _LOGGER = logging.getLogger(__name__)
 TIMEOUT = timedelta(seconds=30)
 
 class Connection:
-    """ Connection to Seat connect """
+    """ Connection to Connect services """
   # Init connection class
-    def __init__(self, session, username, password, fulldebug=False, interval=timedelta(minutes=5)):
+    def __init__(self, session, username, password, fulldebug=False, **optional):
         """ Initialize """
         self._session = session
         self._lock = asyncio.Lock()
@@ -100,18 +103,16 @@ class Connection:
         self._session_cookies = ''
 
     def _getNonce(self):
-        ts = "%d" % (time.time())
+        chars = string.ascii_letters + string.digits
+        text = ''.join(secrets.choice(chars) for i in range(10))
         sha256 = hashlib.sha256()
-        sha256.update(ts.encode())
+        sha256.update(text.encode())
         return (b64encode(sha256.digest()).decode('utf-8')[:-1])
 
     def _getState(self):
-        ts = "%d" % (time.time()-1000)
-        sha256 = hashlib.sha256()
-        sha256.update(ts.encode())
-        return (b64encode(sha256.digest()).decode('utf-8')[:-1])
+        return self._getNonce()
 
-  # API login
+  # API login/logout/authorization
     async def doLogin(self):
         """Login method, clean login"""
         _LOGGER.info('Initiating new login')
@@ -280,7 +281,6 @@ class Connection:
             for key in token_data:
                 if '_token' in key:
                     self._session_tokens[client][key] = token_data[key]
-            _LOGGER.debug(f'Token data: {token_data}')
             if 'error' in self._session_tokens[client]:
                 error = self._session_tokens[client].get('error', '')
                 if 'error_description' in self._session_tokens[client]:
@@ -320,21 +320,21 @@ class Connection:
         return True
 
     async def _signin_service(self, html, authissuer, authorizationEndpoint):
-        """Method for signin to connect portal."""
+        """Method to signin to Connect portal."""
         # Extract login form and extract attributes
         try:
             response_data = await html.text()
             responseSoup = BeautifulSoup(response_data, 'html.parser')
-            mailform = dict()
+            form_data = dict()
             if responseSoup is None:
                 raise SeatLoginFailedException('Login failed, server did not return a login form')
             for t in responseSoup.find('form', id='emailPasswordForm').find_all('input', type='hidden'):
                 if self._session_fulldebug:
                     _LOGGER.debug(f'Extracted form attribute: {t["name"], t["value"]}')
-                mailform[t['name']] = t['value']
-            #mailform = dict([(t['name'],t['value']) for t in responseSoup.find('form', id='emailPasswordForm').find_all('input', type='hidden')])
-            mailform['email'] = self._session_auth_username
+                form_data[t['name']] = t['value']
+            form_data['email'] = self._session_auth_username
             pe_url = authissuer+responseSoup.find('form', id='emailPasswordForm').get('action')
+            login_base = pe_url.split('login')
         except Exception as e:
             _LOGGER.error('Failed to extract user login form.')
             raise
@@ -347,7 +347,7 @@ class Connection:
         req = await self._session.post(
             url = pe_url,
             headers = self._session_auth_headers,
-            data = mailform
+            data = form_data
         )
         if req.status != 200:
             raise SeatException('Authorization request failed')
@@ -355,16 +355,39 @@ class Connection:
             response_data = await req.text()
             responseSoup = BeautifulSoup(response_data, 'html.parser')
             pwform = {}
-            for t in responseSoup.find('form', id='credentialsForm').find_all('input', type='hidden'):
-                if self._session_fulldebug:
-                    _LOGGER.debug(f'Extracted form attribute: {t["name"], t["value"]}')
-                pwform[t['name']] = t['value']
-            #pwform = dict([(t['name'],t['value']) for t in responseSoup.find('form', id='credentialsForm').find_all('input', type='hidden')])
-            pwform['password'] = self._session_auth_password
-            pw_url = authissuer+responseSoup.find('form', id='credentialsForm').get('action')
+            credentials_form = responseSoup.find('form', id='credentialsForm')
+            all_scripts = responseSoup.find_all('script', {'src': False})
+            if credentials_form is not None:
+                _LOGGER.debug('Found HTML credentials form, extracting attributes')
+                for t in credentials_form.find_all('input', type='hidden'):
+                    if self._session_fulldebug:
+                        _LOGGER.debug(f'Extracted form attribute: {t["name"], t["value"]}')
+                    pwform[t['name']] = t['value']
+                    form_data = pwform
+                    post_action = responseSoup.find('form', id='credentialsForm').get('action')
+            elif all_scripts is not None:
+                _LOGGER.debug('Found dynamic credentials form, extracting attributes')
+                pattern = re.compile("templateModel: (.*?),\n")
+                for sc in all_scripts:
+                    if(pattern.search(sc.string)):
+                        import json
+                        data = pattern.search(sc.string)
+                        jsondata = json.loads(data.groups()[0])
+                        _LOGGER.debug(f'JSON: {jsondata}')
+                        if not jsondata.get('hmac', False):
+                            raise SeatLoginFailedException('Failed to extract login hmac attribute')
+                        if not jsondata.get('postAction', False):
+                            raise SeatLoginFailedException('Failed to extract login post action attribute')
+                        if jsondata.get('error', None) is not None:
+                            raise SeatLoginFailedException(f'Login failed with error: {jsondata.get("error", None)}')
+                        form_data['hmac'] = jsondata.get('hmac', '')
+                        post_action = jsondata.get('postAction')
+            else:
+                raise SeatLoginFailedException('Failed to extract login form data')
+            form_data['password'] = self._session_auth_password
+        except (SeatLoginFailedException) as e:
+            raise
         except Exception as e:
-            if responseSoup.find('form', id='credentialsForm') is None:
-                raise SeatAuthenticationException("Invalid username")
             raise SeatAuthenticationException("Invalid username or service unavailable")
 
         # POST password
@@ -373,11 +396,12 @@ class Connection:
         self._session_auth_headers['Origin'] = authissuer
         _LOGGER.debug(f"Finalizing login")
         if self._session_fulldebug:
-            _LOGGER.debug(f'Using login action url: "{pw_url}"')
+            _LOGGER.debug(f'Using login action url: "{login_base[0]}{post_action}"')
+            _LOGGER.debug(f'POSTing following form data: {form_data}')
         req = await self._session.post(
-            url=pw_url,
+            url=login_base[0]+post_action,
             headers=self._session_auth_headers,
-            data = pwform,
+            data = form_data,
             allow_redirects=False
         )
         return req.headers.get('Location', None)
@@ -504,17 +528,31 @@ class Connection:
             response = await self._request(METH_GET, url)
             return response
         except aiohttp.client_exceptions.ClientResponseError as error:
+            data = {
+                'status_code': error.status,
+                'error': error.code,
+                'error_description': error.message,
+                'response_headers': error.headers,
+                'request_info': error.request_info
+            }
             if error.status == 401:
-                _LOGGER.warning(f'Received "unauthorized" error while fetching data: {error}')
+                _LOGGER.warning('Received "Unauthorized" while fetching data.\nThis can occur if tokens expired or refresh service is unavailable.')
             elif error.status == 400:
-                _LOGGER.error(f'Got HTTP 400 {error}"Bad Request" from server, this request might be malformed or not implemented correctly for this vehicle')
+                _LOGGER.error('Received "Bad Request" from server.\nThe request might be malformed or not implemented correctly for this vehicle.')
+            elif error.status == 412:
+                _LOGGER.debug('Received "Pre-condition failed".\nService might be temporarily unavailable.')
             elif error.status == 500:
-                _LOGGER.info('Got HTTP 500 from server, service might be temporarily unavailable')
+                _LOGGER.info('Received "Internal server error".\nThe service is temporarily unavailable.')
             elif error.status == 502:
-                _LOGGER.info('Got HTTP 502 from server, this request might not be supported for this vehicle')
+                _LOGGER.info('Received "Bad gateway".\nEither the endpoint is temporarily unavailable or not supported for this vehicle.')
+            elif 400 <= error.status <= 499:
+                _LOGGER.error('Received unhandled error indicating client-side problem.\nRestart or try again later.')
+            elif 500 <= error.status <= 599:
+                _LOGGER.error('Received unhandled error indicating server-side problem.\nThe service might be temporarily unavailable.')
             else:
-                _LOGGER.error(f'Got unhandled error from server: {error.status}')
-            return {'status_code': error.status}
+                _LOGGER.error('Received unhandled error while requesting API endpoint.')
+            _LOGGER.debug(f'HTTP request information: {data}')
+            return data
         except Exception as e:
             _LOGGER.debug(f'Got non HTTP related error: {e}')
 
@@ -527,7 +565,8 @@ class Connection:
 
     async def _request(self, method, url, **kwargs):
         """Perform a HTTP query"""
-        _LOGGER.debug(f'HTTP {method} "{url}"')
+        if self._session_fulldebug:
+            _LOGGER.debug(f'HTTP {method} "{url}"')
         async with self._session.request(
             method,
             url,
@@ -558,7 +597,6 @@ class Connection:
                     else:
                         if 'xml' in response.headers.get('Content-Type', ''):
                             res = xmltodict.parse(await response.text())
-                            #res = to_json(obj)
                         else:
                             res = await response.json(loads=json_loads)
                 else:
@@ -584,6 +622,7 @@ class Connection:
             _LOGGER.debug(f'Data call returned: {response}')
             return response
         except aiohttp.client_exceptions.ClientResponseError as error:
+            _LOGGER.debug(f'Request failed. Data: {data}, HTTP request headers: {self._session_headers}')
             if error.status == 401:
                 _LOGGER.error('Unauthorized')
             elif error.status == 400:
@@ -640,15 +679,16 @@ class Connection:
                 _LOGGER.debug(f'Consent returned {consent}')
                 if 'status' in consent.get('mandatoryConsentInfo', []):
                     if consent.get('mandatoryConsentInfo', [])['status'] != 'VALID':
-                        raise SeatEULAException(f'User needs to update consent for {consent.get("mandatoryConsentInfo", [])["id"]}')
+                        _LOGGER.error(f'The user needs to update consent for {consent.get("mandatoryConsentInfo", [])["id"]}. If problems are encountered please visit the web portal first and accept terms and conditions.')
                 elif len(consent.get('missingMandatoryFields', [])) > 0:
-                    raise SeatEULAException(f'Missing mandatory field for user: {consent.get("missingMandatoryFields", [])[0].get("name", "")}')
+                    _LOGGER.error(f'Missing mandatory field for user: {consent.get("missingMandatoryFields", [])[0].get("name", "")}. If problems are encountered please visit the web portal first and accept terms and conditions.')
                 else:
                     _LOGGER.debug('User consent is valid, no missing information for profile')
             else:
                 _LOGGER.debug('Could not retrieve consent information')
         except:
-            raise
+            _LOGGER.debug('Could not fetch consent information. If problems are encountered please visit the web portal first and make sure that no new terms and conditions need to be accepted.')
+
         # Fetch vehicles
         try:
             await self.set_token('vwg')
@@ -815,10 +855,6 @@ class Connection:
             await self.set_token('vwg')
             response = await self.get(f'https://mal-1a.prd.ece.vwg-connect.com/api/cs/vds/v1/vehicles/{vin}/homeRegion', vin)
             return response.get('homeRegion', {}).get('baseUri', {}).get('content', False)
-            #self._session_auth_ref_url = response['homeRegion']['baseUri']['content'].split('/api')[0].replace('mal-', 'fal-') if response['homeRegion']['baseUri']['content'] != 'https://mal-1a.prd.ece.vwg-connect.com/api' else 'https://msg.volkswagen.de'
-            #self._session_oper_ref_url = response['homeRegion']['baseUri']['content'].split('/api')[0].replace('mal-', 'fal-') if response['homeRegion']['baseUri']['content'] != 'https://mal-1a.prd.ece.vwg-connect.com/api' else 'https://mal-1a.prd.ece.vwg-connect.com'
-            #self._session_spin_ref_url = response['homeRegion']['baseUri']['content'].split('/api')[0]
-            #return response['homeRegion']['baseUri']['content']
         except Exception as error:
             _LOGGER.debug(f'Could not get homeregion, error {error}')
         return False
@@ -841,18 +877,24 @@ class Connection:
             data = {'error': 'unknown'}
         return data
 
-    async def getModelImageURL(self, vin):
+    async def getModelImageURL(self, vin, size):
         """Construct the URL for the model image."""
         try:
             # Construct message to be encrypted
             date = datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%mZ')
-            message = MODELAPPID +'\n'+ MODELAPI +'?vin='+ vin +'&view='+ MODELVIEW +'&date='+ date
+            if size in ['S', 's', 'Small', 'small']:
+                message = MODELAPPID +'\n'+ MODELAPI +'?vin='+ vin +'&view='+ MODELVIEWS +'&date='+ date
+            else:
+                message = MODELAPPID +'\n'+ MODELAPI +'?vin='+ vin +'&view='+ MODELVIEWL +'&date='+ date
             # Construct hmac SHA-256 key object and encode the message
             digest = hmac.new(MODELAPIKEY, msg=message.encode(), digestmod=hashlib.sha256).digest()
             b64enc = {'sign': b64encode(digest).decode()}
             sign = urlencode(b64enc)
             # Construct the URL
-            path = MODELAPI +'?vin='+ vin +'&view='+ MODELVIEW +'&appId='+ MODELAPPID +'&date='+ date +'&'+ sign
+            if size in ['S', 's', 'Small', 'small']:
+                path = MODELAPI +'?vin='+ vin +'&view='+ MODELVIEWS +'&appId='+ MODELAPPID +'&date='+ date +'&'+ sign
+            else:
+                path = MODELAPI +'?vin='+ vin +'&view='+ MODELVIEWL +'&appId='+ MODELAPPID +'&date='+ date +'&'+ sign
             url = MODELHOST + path
             try:
                 response = await self._session.get(
@@ -860,7 +902,7 @@ class Connection:
                     allow_redirects=False
                 )
                 if response.headers.get('Location', False):
-                    return response.headers.get('Location')
+                    return response.headers.get('Location').split('?')[0]
                 else:
                     _LOGGER.debug('Could not fetch Model image URL, request returned with status code {response.status_code}')
             except:

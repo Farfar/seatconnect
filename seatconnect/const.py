@@ -88,7 +88,7 @@ ERROR_CODES = {
 }
 
 # Constants related to model image URL construction
-MODELVIEW = 'w1080'                                     # Related to image size, 1080 wide
+MODELVIEWL = 'w1080'                                     # Related to image size, 1080 wide
 MODELVIEWS = 'main'                                     # Related to image size, smaller
 MODELAPPID = 'ModcwpMobile'                             # Client, other option is 'Connectedmod' from web client
 MODELAPPIDS = 'Connectedmod'

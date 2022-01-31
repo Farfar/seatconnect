@@ -15,6 +15,7 @@ from seatconnect.exceptions import (
     SeatConfigException,
     SeatException,
     SeatEULAException,
+    SeatServiceUnavailable,
     SeatThrottledException,
     SeatInvalidRequestException,
     SeatRequestInProgressException
@@ -22,6 +23,7 @@ from seatconnect.exceptions import (
 
 _LOGGER = logging.getLogger(__name__)
 
+DATEZERO = datetime(1970,1,1)
 class Vehicle:
     def __init__(self, conn, data):
         _LOGGER.debug(f'Creating Vehicle class object with data {data}')
@@ -32,18 +34,20 @@ class Vehicle:
         self._specification = data.get('specification', {})
         self._apibase = 'https://msg.volkswagen.de'
         self._secbase = 'https://msg.volkswagen.de'
-        self._modelimageurl = None
+        self._modelimagel = None
+        self._modelimages = None
         self._discovered = False
+        self._dashboard = None
         self._states = {}
 
         self._requests = {
-            'departuretimer': {'status': '', 'timestamp': datetime.now()},
-            'batterycharge': {'status': '', 'timestamp': datetime.now()},
-            'climatisation': {'status': '', 'timestamp': datetime.now()},
-            'refresh': {'status': '', 'timestamp': datetime.now()},
-            'lock': {'status': '', 'timestamp': datetime.now()},
-            'honkandflash': {'status': '', 'timestamp': datetime.now()},
-            'preheater': {'status': '', 'timestamp': datetime.now()},
+            'departuretimer': {'status': '', 'timestamp': DATEZERO},
+            'batterycharge': {'status': '', 'timestamp': DATEZERO},
+            'climatisation': {'status': '', 'timestamp': DATEZERO},
+            'refresh': {'status': '', 'timestamp': DATEZERO},
+            'lock': {'status': '', 'timestamp': DATEZERO},
+            'honkandflash': {'status': '', 'timestamp': DATEZERO},
+            'preheater': {'status': '', 'timestamp': DATEZERO},
             'remaining': -1,
             'latest': '',
             'state': ''
@@ -116,8 +120,9 @@ class Vehicle:
                 if endpoint.get('active', False):
                     _LOGGER.debug(f'API endpoint "{endpointName}" valid until {endpoint.get("expiration").strftime("%Y-%m-%d %H:%M:%S")} - operations: {endpoint.get("operations", [])}')
 
-        # Get URL for model image
-        self._modelimageurl = await self.get_modelimageurl()
+         # Get URLs for model image
+        self._modelimagel = await self.get_modelimageurl(size='L')
+        self._modelimages = await self.get_modelimageurl(size='S')
 
         self._discovered = datetime.now()
 
@@ -154,9 +159,9 @@ class Vehicle:
         return True
 
   # Data collection functions
-    async def get_modelimageurl(self):
+    async def get_modelimageurl(self, size='L'):
         """Fetch the URL for model image."""
-        return await self._connection.getModelImageURL(self.vin)
+        return await self._connection.getModelImageURL(self.vin, size)
 
     async def get_realcardata(self):
         """Fetch realcar data."""
@@ -175,7 +180,6 @@ class Vehicle:
                     _LOGGER.debug('Could not fetch preheater data')
         else:
             self._requests.pop('preheater', None)
-            _LOGGER.info(f'Skipping pre-heater, {self._services.get("rheating_v1", {}).get("reason", "not supported")}')
 
     async def get_climater(self):
         """Fetch climater data if function is enabled."""
@@ -188,7 +192,6 @@ class Vehicle:
                     _LOGGER.debug('Could not fetch climater data')
         else:
             self._requests.pop('climatisation', None)
-            _LOGGER.info(f'Skipping climatisation, {self._services.get("rclima_v1", {}).get("reason", "not supported")}')
 
     async def get_trip_statistic(self):
         """Fetch trip data if function is enabled."""
@@ -199,8 +202,6 @@ class Vehicle:
                     self._states.update(data)
                 else:
                     _LOGGER.debug('Could not fetch trip statistics')
-        else:
-            _LOGGER.info(f'Skipping trip statistics, {self._services.get("trip_statistics_v1", {}).get("reason", "not supported")}')
 
     async def get_position(self):
         """Fetch position data if function is enabled."""
@@ -220,8 +221,6 @@ class Vehicle:
                     self._states.update(data)
                 else:
                     _LOGGER.debug('Could not fetch any positional data')
-        else:
-            _LOGGER.info(f'Skipping position, {self._services.get("carfinder_v1", {}).get("reason", "not supported")}')
 
     async def get_statusreport(self):
         """Fetch status data if function is enabled."""
@@ -232,8 +231,6 @@ class Vehicle:
                     self._states.update(data)
                 else:
                     _LOGGER.debug('Could not fetch status report')
-        else:
-            _LOGGER.info(f'Skipping status report, {self._services.get("statusreport_v1", {}).get("reason", "not supported")}')
 
     async def get_charger(self):
         """Fetch charger data if function is enabled."""
@@ -244,9 +241,6 @@ class Vehicle:
                     self._states.update(data)
                 else:
                     _LOGGER.debug('Could not fetch charger data')
-        else:
-            self._requests.pop('charger', None)
-            _LOGGER.info(f'Skipping charger, {self._services.get("rbatterycharge", {}).get("reason", "not supported")}')
 
     async def get_timerprogramming(self):
         """Fetch timer data if function is enabled."""
@@ -257,9 +251,6 @@ class Vehicle:
                     self._states.update(data)
                 else:
                     _LOGGER.debug('Could not fetch timers')
-        else:
-            self._requests.pop('departuretimer', None)
-            _LOGGER.info(f'Skipping departure timers, {self._services.get("timerprogramming_v1", {}).get("reason", "not supported")}')
 
     async def wait_for_request(self, section, request, retryCount=36):
         """Update status of outstanding requests."""
@@ -571,6 +562,7 @@ class Vehicle:
 
     async def set_climatisation(self, mode = 'off', temp = None, hvpower = None, spin = None):
         """Turn on/off climatisation with electric/auxiliary heater."""
+        data = {}
         # Validate user input
         if mode not in ['electric', 'auxiliary', 'Start', 'Stop', 'on', 'off']:
             raise SeatInvalidRequestException(f"Invalid mode for set_climatisation: {mode}")
@@ -884,9 +876,16 @@ class Vehicle:
             return False
 
     def dashboard(self, **config):
-        #Classic python notation
-        from seatconnect.dashboard import Dashboard
-        return Dashboard(self, **config)
+        """Returns dashboard, creates new if none exist."""
+        if self._dashboard is None:
+            # Init new dashboard if none exist
+            from seatconnect.dashboard import Dashboard
+            self._dashboard = Dashboard(self, **config)
+        elif config != self._dashboard._config:
+            # Init new dashboard on config change
+            from seatconnect.dashboard import Dashboard
+            self._dashboard = Dashboard(self, **config)
+        return self._dashboard
 
     @property
     def vin(self):
@@ -951,14 +950,25 @@ class Vehicle:
             return True
 
     @property
-    def model_image(self):
+    def model_image_small(self):
         """Return URL for model image"""
-        return self._modelimageurl
+        return self._modelimages
 
     @property
-    def is_model_image_supported(self):
+    def is_model_image_small_supported(self):
         """Return true if model image url is not None."""
-        if self._modelimageurl is not None:
+        if self._modelimages is not None:
+            return True
+
+    @property
+    def model_image_large(self):
+        """Return URL for model image"""
+        return self._modelimagel
+
+    @property
+    def is_model_image_large_supported(self):
+        """Return true if model image url is not None."""
+        if self._modelimagel is not None:
             return True
 
   # Lights
@@ -1349,25 +1359,7 @@ class Vehicle:
 
   # Vehicle fuel level and range
     @property
-    def electric_range(self):
-        value = -1
-        if '0x0301030008' in self.attrs.get('StoredVehicleDataResponseParsed', {}):
-            if 'value' in self.attrs.get('StoredVehicleDataResponseParsed')['0x0301030008']:
-                value = self.attrs.get('StoredVehicleDataResponseParsed')['0x0301030008'].get('value', 0)
-        elif self.attrs.get('battery', False):
-            value = int(self.attrs.get('battery', {}).get('cruisingRangeElectricInMeters', 0))/1000
-        return int(value)
-
-    @property
-    def is_electric_range_supported(self):
-        if self.attrs.get('StoredVehicleDataResponseParsed', False):
-            if '0x0301030008' in self.attrs.get('StoredVehicleDataResponseParsed'):
-                if 'value' in self.attrs.get('StoredVehicleDataResponseParsed')['0x0301030008']:
-                    return True
-        return False
-
-    @property
-    def combustion_range(self):
+    def primary_range(self):
         value = -1
         if '0x0301030006' in self.attrs.get('StoredVehicleDataResponseParsed'):
             if 'value' in self.attrs.get('StoredVehicleDataResponseParsed')['0x0301030006']:
@@ -1375,10 +1367,101 @@ class Vehicle:
         return int(value)
 
     @property
-    def is_combustion_range_supported(self):
+    def is_primary_range_supported(self):
         if self.attrs.get('StoredVehicleDataResponseParsed', False):
             if '0x0301030006' in self.attrs.get('StoredVehicleDataResponseParsed'):
-                return True
+                if 'value' in self.attrs.get('StoredVehicleDataResponseParsed')['0x0301030006']:
+                    return True
+        return False
+
+    @property
+    def primary_drive(self):
+        value = -1
+        if '0x0301030007' in self.attrs.get('StoredVehicleDataResponseParsed'):
+            if 'value' in self.attrs.get('StoredVehicleDataResponseParsed')['0x0301030007']:
+                value = self.attrs.get('StoredVehicleDataResponseParsed')['0x0301030007'].get('value', 0)
+        return int(value)
+
+    @property
+    def is_primary_drive_supported(self):
+        if self.attrs.get('StoredVehicleDataResponseParsed', False):
+            if '0x0301030007' in self.attrs.get('StoredVehicleDataResponseParsed'):
+                if 'value' in self.attrs.get('StoredVehicleDataResponseParsed')['0x0301030007']:
+                    return True
+        return False
+
+    @property
+    def secondary_range(self):
+        value = -1
+        if '0x0301030008' in self.attrs.get('StoredVehicleDataResponseParsed'):
+            if 'value' in self.attrs.get('StoredVehicleDataResponseParsed')['0x0301030008']:
+                value = self.attrs.get('StoredVehicleDataResponseParsed')['0x0301030008'].get('value', 0)
+        return int(value)
+ 
+    @property
+    def is_secondary_range_supported(self):
+        if self.attrs.get('StoredVehicleDataResponseParsed', False):
+            if '0x0301030008' in self.attrs.get('StoredVehicleDataResponseParsed'):
+                if 'value' in self.attrs.get('StoredVehicleDataResponseParsed')['0x0301030008']:
+                    return True
+        return False
+
+    @property
+    def secondary_drive(self):
+        value = -1
+        if '0x0301030009' in self.attrs.get('StoredVehicleDataResponseParsed'):
+            if 'value' in self.attrs.get('StoredVehicleDataResponseParsed')['0x0301030009']:
+                value = self.attrs.get('StoredVehicleDataResponseParsed')['0x0301030009'].get('value', 0)
+        return int(value)
+ 
+    @property
+    def is_secondary_drive_supported(self):
+        if self.attrs.get('StoredVehicleDataResponseParsed', False):
+            if '0x0301030009' in self.attrs.get('StoredVehicleDataResponseParsed'):
+                if 'value' in self.attrs.get('StoredVehicleDataResponseParsed')['0x0301030009']:
+                    return True
+        return False
+
+    @property
+    def electric_range(self):
+        value = -1
+        if self.is_secondary_drive_supported:
+            if self.secondary_drive == 3:
+                return self.secondary_range
+        elif self.is_primary_drive_supported:
+            if self.primary_drive == 3:
+                return self.primary_range
+        return -1
+
+    @property
+    def is_electric_range_supported(self):
+        if self.is_secondary_drive_supported:
+            if self.secondary_drive == 3:
+                return self.is_secondary_range_supported
+        elif self.is_primary_drive_supported:
+            if self.primary_drive == 3:
+                return self.is_primary_range_supported
+        return False
+
+    @property
+    def combustion_range(self):
+        value = -1
+        if self.is_primary_drive_supported:
+            if not self.primary_drive == 3:
+                return self.primary_range
+        elif self.is_secondary_drive_supported:
+            if not self.secondary_drive == 3:
+                return self.secondary_range
+        return -1
+
+    @property
+    def is_combustion_range_supported(self):
+        if self.is_primary_drive_supported:
+            if not self.primary_drive == 3:
+                return self.is_primary_range_supported
+        elif self.is_secondary_drive_supported:
+            if not self.secondary_drive == 3:
+                return self.is_secondary_range_supported
         return False
 
     @property
@@ -1487,6 +1570,20 @@ class Vehicle:
                 return False
 
   # Climatisation, electric
+    @property
+    def electric_climatisation_attributes(self):
+        """Return climatisation attributes."""
+        data = {
+            'source': self.attrs.get('climater', {}).get('settings', {}).get('heaterSource', {}).get('content', ''),
+            'status': self.attrs.get('climater', {}).get('status', {}).get('climatisationStatusData', {}).get('climatisationState', {}).get('content', '')
+        }
+        return data
+
+    @property
+    def is_electric_climatisation_attributes_supported(self):
+        """Return true if vehichle has climater."""
+        return self.is_climatisation_supported
+
     @property
     def electric_climatisation(self):
         """Return status of climatisation."""
@@ -2120,9 +2217,21 @@ class Vehicle:
         return self._requests.get('refresh', {}).get('status', 'None')
 
     @property
+    def refresh_action_timestamp(self):
+        """Return timestamp of latest data refresh request."""
+        timestamp = self._requests.get('refresh', {}).get('timestamp', DATEZERO)
+        return timestamp.strftime("%Y-%m-%d %H:%M:%S")
+
+    @property
     def charger_action_status(self):
         """Return latest status of charger request."""
         return self._requests.get('batterycharge', {}).get('status', 'None')
+
+    @property
+    def charger_action_timestamp(self):
+        """Return timestamp of latest charger request."""
+        timestamp = self._requests.get('charger', {}).get('timestamp', DATEZERO)
+        return timestamp.strftime("%Y-%m-%d %H:%M:%S")
 
     @property
     def climater_action_status(self):
@@ -2130,9 +2239,21 @@ class Vehicle:
         return self._requests.get('climatisation', {}).get('status', 'None')
 
     @property
+    def climater_action_timestamp(self):
+        """Return timestamp of latest climater request."""
+        timestamp = self._requests.get('climatisation', {}).get('timestamp', DATEZERO)
+        return timestamp.strftime("%Y-%m-%d %H:%M:%S")
+
+    @property
     def pheater_action_status(self):
         """Return latest status of parking heater request."""
         return self._requests.get('preheater', {}).get('status', 'None')
+
+    @property
+    def pheater_action_timestamp(self):
+        """Return timestamp of latest parking heater request."""
+        timestamp = self._requests.get('preheater', {}).get('timestamp', DATEZERO)
+        return timestamp.strftime("%Y-%m-%d %H:%M:%S")
 
     @property
     def honkandflash_action_status(self):
@@ -2140,14 +2261,32 @@ class Vehicle:
         return self._requests.get('honkandflash', {}).get('status', 'None')
 
     @property
+    def honkandflash_action_timestamp(self):
+        """Return timestamp of latest honk and flash request."""
+        timestamp = self._requests.get('honkandflash', {}).get('timestamp', DATEZERO)
+        return timestamp.strftime("%Y-%m-%d %H:%M:%S")
+
+    @property
     def lock_action_status(self):
         """Return latest status of lock action request."""
         return self._requests.get('lock', {}).get('status', 'None')
 
     @property
+    def lock_action_timestamp(self):
+        """Return timestamp of latest lock action request."""
+        timestamp = self._requests.get('lock', {}).get('timestamp', DATEZERO)
+        return timestamp.strftime("%Y-%m-%d %H:%M:%S")
+
+    @property
     def timer_action_status(self):
-        """Return latest status of lock action request."""
+        """Return latest status of departure timer request."""
         return self._requests.get('departuretimer', {}).get('status', 'None')
+
+    @property
+    def timer_action_timestamp(self):
+        """Return timestamp of latest departure timer request."""
+        timestamp = self._requests.get('departuretimer', {}).get('timestamp', DATEZERO)
+        return timestamp.strftime("%Y-%m-%d %H:%M:%S")
 
     @property
     def refresh_data(self):
@@ -2216,12 +2355,14 @@ class Vehicle:
     def request_results(self):
         """Get last request result."""
         data = {
-            'latest': self._requests.get('latest', None),
-            'state': self._requests.get('state', None)
+            'latest': self._requests.get('latest', 'N/A'),
+            'state': self._requests.get('state', 'N/A'),
         }
         for section in self._requests:
             if section in ['departuretimer', 'batterycharge', 'climatisation', 'refresh', 'lock', 'preheater']:
-                data[section] = self._requests[section].get('status', 'Unknown')
+                timestamp = self._requests.get(section, {}).get('timestamp', DATEZERO)
+                data[section] = self._requests[section].get('status', 'N/A')
+                data[section+'_timestamp'] = timestamp.strftime("%Y-%m-%d %H:%M:%S")
         return data
 
     @property

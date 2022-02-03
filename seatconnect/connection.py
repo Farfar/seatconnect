@@ -334,7 +334,6 @@ class Connection:
                 form_data[t['name']] = t['value']
             form_data['email'] = self._session_auth_username
             pe_url = authissuer+responseSoup.find('form', id='emailPasswordForm').get('action')
-            login_base = pe_url.split('login')
         except Exception as e:
             _LOGGER.error('Failed to extract user login form.')
             raise
@@ -396,10 +395,10 @@ class Connection:
         self._session_auth_headers['Origin'] = authissuer
         _LOGGER.debug(f"Finalizing login")
         if self._session_fulldebug:
-            _LOGGER.debug(f'Using login action url: "{login_base[0]}{post_action}"')
+            _LOGGER.debug(f'Using login action url: "{authissuer}{post_action}"')
             _LOGGER.debug(f'POSTing following form data: {form_data}')
         req = await self._session.post(
-            url=login_base[0]+post_action,
+            url=authissuer+post_action,
             headers=self._session_auth_headers,
             data = form_data,
             allow_redirects=False

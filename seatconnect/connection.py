@@ -398,7 +398,7 @@ class Connection:
             _LOGGER.debug(f'Using login action url: "{authissuer}{post_action}"')
             _LOGGER.debug(f'POSTing following form data: {form_data}')
         req = await self._session.post(
-            url=authissuer+post_action,
+            url=authissuer+'/'+post_action,
             headers=self._session_auth_headers,
             data = form_data,
             allow_redirects=False

@@ -1025,9 +1025,10 @@ class Vehicle:
     @property
     def service_inspection(self):
         """Return time left until service inspection"""
-        value = -1
-        value = 0-int(self.attrs.get('StoredVehicleDataResponseParsed', {}).get('0x0203010004',{}).get('value', 0))
-        return int(value)
+        try:
+            return 0 - int(self.attrs.get('StoredVehicleDataResponseParsed', {}).get('0x0203010004',{}).get('value', 0))
+        except TypeError:
+            return 0
 
     @property
     def is_service_inspection_supported(self):
@@ -1039,9 +1040,10 @@ class Vehicle:
     @property
     def service_inspection_distance(self):
         """Return time left until service inspection"""
-        value = -1
-        value = 0-int(self.attrs.get('StoredVehicleDataResponseParsed')['0x0203010003'].get('value', 0))
-        return int(value)
+        try:
+            return 0 - int(self.attrs.get('StoredVehicleDataResponseParsed')['0x0203010003'].get('value', 0))
+        except TypeError:
+            return 0
 
     @property
     def is_service_inspection_distance_supported(self):
@@ -1397,7 +1399,7 @@ class Vehicle:
             if 'value' in self.attrs.get('StoredVehicleDataResponseParsed')['0x0301030008']:
                 value = self.attrs.get('StoredVehicleDataResponseParsed')['0x0301030008'].get('value', 0)
         return int(value)
- 
+
     @property
     def is_secondary_range_supported(self):
         if self.attrs.get('StoredVehicleDataResponseParsed', False):
@@ -1413,7 +1415,7 @@ class Vehicle:
             if 'value' in self.attrs.get('StoredVehicleDataResponseParsed')['0x0301030009']:
                 value = self.attrs.get('StoredVehicleDataResponseParsed')['0x0301030009'].get('value', 0)
         return int(value)
- 
+
     @property
     def is_secondary_drive_supported(self):
         if self.attrs.get('StoredVehicleDataResponseParsed', False):

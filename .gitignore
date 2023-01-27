@@ -5,3 +5,4 @@ dist/
 seatconnect.egg-info/
 __pycache__/
 seat.conf
+.venv

@@ -8,20 +8,20 @@ COUNTRY = 'ES'
 # Data used in communication
 CLIENT_LIST = {
     'seat': {
-        'CLIENT_ID': '50f215ac-4444-4230-9fb1-fe15cd1a9bcc@apps_vw-dilab_com',
+        'CLIENT_ID': '30e33736-c537-4c72-ab60-74a7b92cfe83@apps_vw-dilab_com',
         'SCOPE': 'openid profile address phone email birthdate nationalIdentifier cars mbb dealers badge nationality',
-        'TOKEN_TYPES': 'code id_token'
+        'TOKEN_TYPES': 'code id_token token'
     }
 }
 
 
 
 #XCLIENT_ID = '3516bc10-fabd-4eb2-b41c-b38e21e9d8f6'
-XCLIENT_ID = 'c34af3dc-f9d0-4bff-a5db-f0af674929f0'
+XCLIENT_ID = '9d183b70-d129-424f-9a26-c3778edf95e1'
 XAPPVERSION = '1.4.0'
 XAPPNAME = 'SEATConnect'
 USER_AGENT = 'okhttp/3.10.0'
-APP_URI = 'seatconnect://identity-kit/login'
+APP_URI = 'cupraconnect://identity-kit/login'
 
 HEADERS_SESSION = {
     'Connection': 'keep-alive',

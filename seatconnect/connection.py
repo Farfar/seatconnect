@@ -262,7 +262,7 @@ class Connection:
             tokenBody = {
                 'auth_code': jwt_auth_code,
                 'id_token':  jwt_id_token,
-                'brand': BRAND
+                'brand': 'cupra'
             }
             tokenURL = 'https://tokenrefreshservice.apps.emea.vwapps.io/exchangeAuthCode'
             req = await self._session.post(

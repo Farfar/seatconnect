@@ -697,8 +697,21 @@ class Connection:
         try:
             await self.set_token('vwg')
             self._session_headers.pop('Content-Type', None)
+            # Extract MBB User ID (Subject) from token
+            subject = None
+            # Try old pyJWT syntax first
+            try:
+                subject = jwt.decode(atoken, verify=False).get('sub', None)
+            except:
+                subject = None
+            # Try new pyJWT syntax if old fails
+            if subject is None:
+                try:
+                    exp = jwt.decode(atoken, options={'verify_signature': False}).get('sub', None)
+                except:
+                    raise Exception("Could not extract sub attribute from token")
             legacy_vehicles = await self.get(
-                url=f'https://msg.volkswagen.de/fs-car/usermanagement/users/v1/{BRAND}/{COUNTRY}/vehicles'
+                url=f"https://mal-3a.prd.eu.dp.vwg-connect.com/api/usermanagement/users/v2/users/{subject}/vehicles"
             )
 
             if legacy_vehicles.get('userVehicles', {}).get('vehicle', False):
@@ -706,10 +719,11 @@ class Connection:
                 for vehicle in legacy_vehicles.get('userVehicles').get('vehicle'):
                     await self.set_token('vwg')
                     self._session_headers['Accept'] = 'application/vnd.vwg.mbb.vehicleDataDetail_v2_1_0+xml, application/vnd.vwg.mbb.genericError_v1_0_2+xml'
+                    vehicle_vin = vehicle.get('content', '')
                     response = await self.get(
                         urljoin(
                             self._session_auth_ref_url,
-                            f'fs-car/vehicleMgmt/vehicledata/v2/{BRAND}/{COUNTRY}/vehicles/{vehicle}'
+                            f'fs-car/vehicleMgmt/vehicledata/v2/{BRAND}/{COUNTRY}/vehicles/{vehicle_vin}'
                         )
                     )
                     self._session_headers['Accept'] = 'application/json'
@@ -717,7 +731,7 @@ class Connection:
                     _LOGGER.debug(f'Response is {response} of type {type(response)}')
                     if response.get('vehicleDataDetail', False):
                         data = {
-                            'vin': vehicle,
+                            'vin': vehicle["content"],
                             'specification': {
                                 'modelCode':         response.get('vehicleDataDetail', {}).get('ns4:carportData', {}).get('ns4:modelCode', ''),
                                 'title':             response.get('vehicleDataDetail', {}).get('ns4:carportData', {}).get('ns4:modelName', ''),
@@ -729,7 +743,7 @@ class Connection:
                                 'transmission':      response.get('vehicleDataDetail', {}).get('ns4:carportData', {}).get('ns4:transmission', ''),
                             }
                         }
-                        response['vin'] = vehicle
+                        response['vin'] = vehicle["content"]
                         api_vehicles.append(data)
                     else:
                         _LOGGER.warning(f"Failed to aquire information about vehicle with VIN {vehicle}")
@@ -797,6 +811,7 @@ class Connection:
             if subject is None:
                 try:
                     exp = jwt.decode(atoken, options={'verify_signature': False}).get('sub', None)
+                    subject = exp
                 except:
                     raise Exception("Could not extract sub attribute from token")
 

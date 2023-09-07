@@ -708,7 +708,7 @@ class Connection:
             # Try new pyJWT syntax if old fails
             if subject is None:
                 try:
-                    exp = jwt.decode(atoken, options={'verify_signature': False}).get('sub', None)
+                    subject = jwt.decode(atoken, options={'verify_signature': False}).get('sub', None)
                 except:
                     raise Exception("Could not extract sub attribute from token")
             legacy_vehicles = await self.get(

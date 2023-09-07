@@ -699,6 +699,7 @@ class Connection:
             self._session_headers.pop('Content-Type', None)
             # Extract MBB User ID (Subject) from token
             subject = None
+            atoken = self._session_tokens['vwg'].get('access_token', None)
             # Try old pyJWT syntax first
             try:
                 subject = jwt.decode(atoken, verify=False).get('sub', None)

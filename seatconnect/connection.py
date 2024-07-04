@@ -227,7 +227,7 @@ class Connection:
                             _LOGGER.warning(f'Login failed: {error}')
                         raise SeatLoginFailedException(error)
                     if 'terms-and-conditions' in location:
-                        raise SeatEULAException('The terms and conditions must be accepted first at "https://my.seat/portal/"')
+                        raise SeatEULAException('The terms and conditions must be accepted first at your local SEAT/Cupra site, e.g. "https://cupraofficial.se/"')
                     if self._session_fulldebug:
                         _LOGGER.debug(f'Following redirect to "{location}"')
                     response = await self._session.get(
@@ -301,7 +301,7 @@ class Connection:
             else:
                 _LOGGER.warning(f'Token for {client} could not be verified, verification returned {verify}.')
         except (SeatEULAException):
-            _LOGGER.warning('Login failed, the terms and conditions might have been updated and need to be accepted. Login to https://my.seat/portal/ and accept the new terms before trying again')
+            _LOGGER.warning('Login failed, the terms and conditions might have been updated and need to be accepted. Login to  your local SEAT/Cupra site, e.g. "https://cupraofficial.se/" and accept the new terms before trying again')
             raise
         except (SeatAccountLockedException):
             _LOGGER.warning('Your account is locked, probably because of too many incorrect login attempts. Make sure that your account is not in use somewhere with incorrect password')
@@ -313,7 +313,7 @@ class Connection:
             _LOGGER.error('An API error was encountered during login, try again later')
             raise
         except (TypeError):
-            _LOGGER.warning(f'Login failed for {self._session_auth_username}. The server might be temporarily unavailable, try again later. If the problem persists, verify your account at https://my.seat/portal/')
+            _LOGGER.warning(f'Login failed for {self._session_auth_username}. The server might be temporarily unavailable, try again later. If the problem persists, verify your account at your local SEAT/Cupra site, e.g. "https://cupraofficial.se/"')
         except Exception as error:
             _LOGGER.error(f'Login failed for {self._session_auth_username}, {error}')
             return False

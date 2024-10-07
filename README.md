@@ -2,6 +2,12 @@
 ![PyPi](https://img.shields.io/pypi/v/seatconnect?label=latest%20pypi)
 ![Downloads PyPi](https://img.shields.io/pypi/dm/seatconnect)
 
+
+# THIS IS NOT MAINTAINED SINCE I DON'T OWN A SEAT/CUPRA CAR
+If you can/want to take over development please send me a message
+
+---
+
 # Seat Connect
 
 Fork of https://github.com/lendy007/skodaconnect which in turn is a fork of:

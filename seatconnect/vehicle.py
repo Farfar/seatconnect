@@ -1095,6 +1095,21 @@ class Vehicle:
                         return True
         return False
 
+    @property
+    def oil_level(self):
+        """Return oil level."""
+        return float(self.attrs.get('StoredVehicleDataResponseParsed', {}).get('0x0204040003', {}).get('value', 0))
+
+    @property
+    def is_oil_level_supported(self):
+        """Return true if oil level is supported."""
+        if self.attrs.get('StoredVehicleDataResponseParsed', False):
+            if '0x0204040003' in self.attrs.get('StoredVehicleDataResponseParsed'):
+                if 'value' in self.attrs.get('StoredVehicleDataResponseParsed')['0x0204040003']:
+                    if self.attrs.get('StoredVehicleDataResponseParsed')['0x0204040003'].get('value', 0) is not None:
+                        return True
+        return False
+
   # Charger related states for EV and PHEV
     @property
     def charging(self):

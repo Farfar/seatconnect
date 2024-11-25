@@ -70,6 +70,7 @@ RESOURCES = [
 		"lock_action_status",
 		"oil_inspection",
 		"oil_inspection_distance",
+		"oil_level",
 		"outside_temperature",
 		"parking_light",
 		"parking_time",

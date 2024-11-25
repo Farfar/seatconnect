@@ -880,6 +880,12 @@ def create_instruments():
             unit="km",
         ),
         Sensor(
+            attr="oil_level",
+            name="Oil level",
+            icon="mdi:oil",
+            unit="%",
+        ),
+        Sensor(
             attr="last_connected",
             name="Last connected",
             icon="mdi:clock",
